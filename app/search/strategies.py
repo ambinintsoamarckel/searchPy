@@ -1,25 +1,18 @@
-from typing import List, Dict
-from app.models import SearchResult
-from app.scoring.evaluator import Evaluator
-from app.scoring.ranking import Ranker
+import asyncio
+from typing import Any
+from .search_utils import SearchService
 
-# Minimal "Meili-like" strategy that fakes hits for demo and scores them
-class MeiliStrategy:
-    def __init__(self):
-        self.eval = Evaluator()
-        self.ranker = Ranker()
-        # small in-memory dataset for demo
-        self._data = [
-            {"id": "1", "name": "Le Petit Resto"},
-            {"id": "2", "name": "La Grande Ferme"},
-            {"id": "3", "name": "Cafe Central"},
-        ]
 
-    def search(self, query: str, location: str = None, limit: int = 50) -> List[SearchResult]:
-        scored = []
-        for doc in self._data:
-            s = self.eval.score(query, doc['name'])
-            scored.append({"id": doc['id'], "name": doc['name'], "score": s})
-        ranked = self.ranker.rank(scored)
-        results = [SearchResult(id=r['id'], name=r['name'], score=r['score']) for r in ranked[:limit]]
-        return results
+# Exported interface for the rest of the app
+class SearchServiceWrapper:
+    def __init__(self, meili_host: str | None = None, meili_key: str | None = None):
+        self._svc = SearchService(meili_host, meili_key)
+
+    async def search(self, index_name: str, query_data: Any, options: Any):
+        return await self._svc.search(index_name, query_data, options)
+
+
+# For tests or simple sync usage, provide a helper that runs the async search loop
+def sync_search(index_name: str, query_data: Any, options: Any):
+    svc = SearchService()
+    return asyncio.get_event_loop().run_until_complete(svc.search(index_name, query_data, options))

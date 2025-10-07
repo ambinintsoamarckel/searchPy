@@ -3,6 +3,7 @@ import re
 from typing import Dict, List, Tuple, Any, Optional
 from app.config import settings
 from app.scoring.distance import string_distance
+from app.models import QueryData
 
 
 class FieldEvaluator:
@@ -160,7 +161,7 @@ class FieldEvaluator:
             }
         }
 
-    def calculate_main_score(self, hit: Dict[str, Any], query_data: Dict[str, Any]) -> Dict[str, Any]:
+    def calculate_main_score(self, hit: Dict[str, Any], query_data: QueryData) -> Dict[str, Any]:
         """
         Calcule le score principal (name_search vs no_space).
 
@@ -171,9 +172,9 @@ class FieldEvaluator:
         Returns:
             Dict avec scores, match_type, winning_strategy, etc.
         """
-        query_clean_words = query_data['wordsCleaned']
-        query_original_words = query_data['wordsOriginal']
-        query_no_space_words = query_data['wordsNoSpace']
+        query_clean_words = query_data.wordsCleaned
+        query_original_words = query_data.wordsOriginal
+        query_no_space_words = query_data.wordsNoSpace
 
         if not query_clean_words:
             return {
@@ -201,7 +202,7 @@ class FieldEvaluator:
         name_words = [w for w in re.split(r'\s+', name.lower().strip()) if w]
 
         # Évaluation name_search
-        eval_search = self.evaluate_field(query_clean_words, name_search_words, query_data['cleaned'])
+        eval_search = self.evaluate_field(query_clean_words, name_search_words, query_data.cleaned)
         p_search = eval_search['penalties']
 
         if eval_search['found_count'] == 0:
@@ -219,7 +220,7 @@ class FieldEvaluator:
             name_search_score_adj = max(0.0, name_search_score - penalty_search)
 
         # Évaluation no_space
-        eval_no_space = self.evaluate_field(query_no_space_words, name_no_space_words, query_data['no_space'])
+        eval_no_space = self.evaluate_field(query_no_space_words, name_no_space_words, query_data.no_space)
         p_no_space = eval_no_space['penalties']
 
         if eval_no_space['found_count'] == 0:
@@ -261,8 +262,8 @@ class FieldEvaluator:
             winning_penalties = p_search
 
         # Bonus sur name
-        eval_name = self.evaluate_field(query_original_words, name_words, query_data['original'])
-        bonus = self.calculate_name_bonus(eval_name, query_original_words, query_data['original'])
+        eval_name = self.evaluate_field(query_original_words, name_words, query_data.original)
+        bonus = self.calculate_name_bonus(eval_name, query_original_words, query_data.original)
 
         total_score = min(12.0, base_score + bonus)
 

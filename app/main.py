@@ -1,16 +1,16 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
 from typing import List
 
-from .models import SearchRequest, SearchResult
-from .search.strategies import MeiliStrategy
+from .models import SearchRequest, SearchResponse
+from .search.strategies import SearchService
 
 app = FastAPI(title="SearchPy - Python Search Service")
 
-strategy = MeiliStrategy()
+service = SearchService()
 
-@app.post('/search', response_model=List[SearchResult])
-def search(req: SearchRequest):
-    """Simple POST /search endpoint that delegates to a strategy."""
-    results = strategy.search(req.query, req.location, limit=req.limit)
-    return results
+
+@app.post('/search', response_model=SearchResponse)
+async def search(req: SearchRequest):
+    """POST /search endpoint. Expects a preprocessed `QueryData` in the body and delegates the heavy work to the service."""
+    resp = await service.search(req.index_name, req.query_data, req.options)
+    return resp
