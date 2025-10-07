@@ -1,0 +1,26 @@
+version: '3.8'
+services:
+  searchpy:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app:delegated
+    env_file:
+      - .env
+    depends_on:
+      - meilisearch
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    environment:
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_MASTER_KEY=masterKey
+    ports:
+      - "7700:7700"
+    volumes:
+      - meili_data:/data.ms
+
+volumes:
+  meili_data:
+    driver: local

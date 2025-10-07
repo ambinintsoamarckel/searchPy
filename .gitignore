@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.env
+.venv/
+venv/
+ENV/
+env/
+celerybeat-schedule
+instance/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Pytest
+.pytest_cache/
+
+# VSCode
+.vscode/
+
+# Git
+*.log
+
+# Docker
+docker-compose.override.yml
+**/docker-compose.override.yml
+
+# Editor backups
+*~
+*.swp
+
+# Mac
+.DS_Store
