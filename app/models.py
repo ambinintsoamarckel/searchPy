@@ -21,7 +21,7 @@ class SearchOptions(BaseModel):
     """Options de recherche."""
     limit: int = Field(default=1_000_000, ge=1, le=1_000_000)
     max_distance: int = Field(default=4, ge=0, le=10)
-    filters: Optional[str] = None
+    filters: Optional[List[str]] = None 
 
 
 class SearchRequest(BaseModel):

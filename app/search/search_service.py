@@ -1,31 +1,42 @@
+# app/search/search_service.py
 import asyncio
 import time
 import psutil
 from typing import List, Dict, Any, Optional
-
 from meilisearch_python_sdk import AsyncClient as MeiliClient
-from app.models import QueryData, SearchOptions, SearchResponse
-from app.search.search_utils import SearchUtils  # <-- Ton utilitaire complet
 
+from app.config import settings  # <--- on importe la config ici
+from app.models import QueryData, SearchOptions, SearchResponse
+from app.search.search_utils import SearchUtils
+import logging
+
+logger = logging.getLogger("search-api")
 
 class SearchService:
     """Service de recherche principal combinant stratégies Meilisearch + scoring SearchUtils."""
 
-    def __init__(self, meili_host: str = None, meili_key: str = None):
-        self.meili_host = meili_host or "http://127.0.0.1:7700"
-        self.meili_key = meili_key or "masterKey"
+    def __init__(self):
+        self.meili_host = settings.MEILISEARCH_URL
+        self.meili_key = settings.MEILISEARCH_API_KEY
         self.client = MeiliClient(self.meili_host, self.meili_key)
-        self.utils = SearchUtils()  # intègre le scoring textuel/phonétique complet
+        self.utils = SearchUtils()
 
     async def _meili_search(
         self, index_name: str, query: str, attributes: List[str], limit: int, filters: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         index = await self.client.get_index(index_name)
-        search_params = {"limit": limit, "attributesToRetrieve": attributes}
-        if filters:
-            search_params['filter'] = filters
-        res = await index.search(query, search_params)
-        return res.get('hits', []) if isinstance(res, dict) else []
+
+        res = await index.search(
+            query,
+            limit=limit,
+            attributes_to_search_on=attributes,
+            filter=filters
+        )
+
+        # Utilisation correcte de l'objet SearchResults
+        hits = res.hits if hasattr(res, "hits") else []
+        return hits
+
 
     async def _parallel_strategies(
         self, index_name: str, qdata: QueryData, options: SearchOptions
