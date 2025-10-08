@@ -21,7 +21,7 @@ class SearchOptions(BaseModel):
     """Options de recherche."""
     limit: int = Field(default=1_000_000, ge=1, le=1_000_000)
     max_distance: int = Field(default=4, ge=0, le=10)
-    filters: Optional[List[str]] = None 
+    filters: Optional[List[str]] = None
 
 
 class SearchRequest(BaseModel):
@@ -77,6 +77,7 @@ class SearchResponse(BaseModel):
     query_time_ms: float
     preprocessing: Optional[QueryData] = None
     memory_used_mb: Optional[float] = None
+    count_per_dep: Dict[str, int] = Field(default_factory=dict)
 
     class Config:
         extra = "allow"
