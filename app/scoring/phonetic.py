@@ -1,66 +1,46 @@
-"""Scoring phonétique."""
+# phonetic_scorer.py
+
 import re
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Any, Optional
 from app.scoring.distance import string_distance
 
-
 class PhoneticScorer:
-    """Scoreur phonétique pour le matching."""
+    """Scoreur phonétique pour le matching avancé."""
 
     def phonetic_tokens(self, s: str) -> List[str]:
-        """Extrait les tokens phonétiques d'une chaîne."""
+        """Tokenisation phonétique d'une chaîne."""
         tokens = re.split(r'\s+', s.lower().strip())
         return [t for t in tokens if t and len(t) > 1]
 
-    def match_phonetic_tokens(
-        self,
-        q_tokens: List[str],
-        h_tokens: List[str],
-        tolerant: bool = False
-    ) -> Dict[str, Any]:
-        """
-        Match les tokens phonétiques entre query et hit.
-
-        Args:
-            q_tokens: Tokens de la query
-            h_tokens: Tokens du hit
-            tolerant: Si True, accepte des variations (Levenshtein <= 1)
-
-        Returns:
-            Dict avec 'found' (nombre de matches) et 'tolerant_used'
-        """
+    def match_phonetic_tokens(self, query_tokens: List[str], hit_tokens: List[str], tolerant: bool = False) -> Dict[str, Any]:
+        """Effectue le matching phonétique entre les tokens."""
         used = {}
         matches = 0
         tolerant_used = False
 
-        for qt in q_tokens:
+        for query_token in query_tokens:
             best_idx = None
             is_tolerant = False
 
-            for i, ct in enumerate(h_tokens):
-                if used.get(i, False):
+            for idx, hit_token in enumerate(hit_tokens):
+                if used.get(idx, False):
                     continue
 
-                # Match exact
-                if qt == ct:
-                    best_idx = i
+                if query_token == hit_token:
+                    best_idx = idx
                     is_tolerant = False
                     break
 
                 # Préfixe (si assez long)
-                minlen = min(len(qt), len(ct))
-                if minlen >= 4 and (qt.startswith(ct) or ct.startswith(qt)):
-                    if best_idx is None:
-                        best_idx = i
-                        is_tolerant = False
+                min_len = min(len(query_token), len(hit_token))
+                if min_len >= 4 and (query_token.startswith(hit_token) or hit_token.startswith(query_token)):
+                    best_idx = idx
+                    is_tolerant = False
                     continue
 
-                # Mode tolérant
-                if tolerant and minlen >= 6:
-                    if string_distance.distance(qt, ct, 1) <= 1:
-                        if best_idx is None:
-                            best_idx = i
-                            is_tolerant = True
+                if tolerant and min_len >= 6 and string_distance.distance(query_token, hit_token, 1) <= 1:
+                    best_idx = idx
+                    is_tolerant = True
 
             if best_idx is not None:
                 used[best_idx] = True
@@ -68,24 +48,12 @@ class PhoneticScorer:
                 if is_tolerant:
                     tolerant_used = True
 
-        return {
-            'found': matches,
-            'tolerant_used': tolerant_used
-        }
+        return {'found': matches, 'tolerant_used': tolerant_used}
 
     def calculate_phonetic_score(self, hit: Dict[str, Any], query_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        Calcule le score phonétique pour un hit.
-
-        Args:
-            hit: Le hit Meilisearch
-            query_data: Les données de la query
-
-        Returns:
-            Dict avec score, ratio, match_type ou None si pas applicable
-        """
-        q = str(query_data.get('soundex', '')).strip()
-        h = str(hit.get('name_soundex', '')).strip()
+        """Calcule le score phonétique d'un hit."""
+        q = query_data.get('soundex', '').strip()
+        h = hit.get('name_soundex', '').strip()
 
         if not q or not h:
             return None
@@ -96,7 +64,7 @@ class PhoneticScorer:
         if not q_tokens or not h_tokens:
             return None
 
-        # Essai strict
+        # Essai strict d'abord
         strict = self.match_phonetic_tokens(q_tokens, h_tokens, tolerant=False)
         ratio = strict['found'] / len(q_tokens)
         match_type = 'phonetic_strict'
@@ -110,5 +78,28 @@ class PhoneticScorer:
         else:
             score = min(6.0, score)
 
-        # Si score faible, essai tolérant
+        # Mode tolérant si score faible
         if score < 6.0:
+            tolerant = self.match_phonetic_tokens(q_tokens, h_tokens, tolerant=True)
+            ratio_tol = tolerant['found'] / len(q_tokens)
+
+            if ratio_tol > ratio:
+                ratio = ratio_tol
+                match_type = 'phonetic_tolerant'
+                score = 8 * ratio
+
+                if ratio == 1.0:
+                    score = min(7.5, score)
+                elif ratio >= 0.66:
+                    score = min(7.0, score)
+                else:
+                    score = min(6.0, score)
+
+        return {
+            'score': score,
+            'ratio': ratio,
+            'match_type': match_type,
+            'query_soundex': q,
+            'hit_soundex': h,
+            'tokens': {'q': q_tokens, 'h': h_tokens}
+        }

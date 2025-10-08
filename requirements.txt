@@ -3,8 +3,9 @@ uvicorn[standard]
 pydantic
 numpy
 python-Levenshtein
-meilisearch-async
+meilisearch-python-sdk
 psutil
 python-dotenv
 httpx
 pytest
+pydantic-settings

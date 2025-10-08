@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     EXACT_THRESHOLD: float = 10.0
     EXACT_FULL_CAP: float = 9.99
     NO_SPACE_MIN_SCORE: float = 7.0
+    MIN_SCORE = 3.0
+
 
     # Priorités de type d'appariement
     TYPE_PRIORITY: Dict[str, int] = {
@@ -55,6 +57,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 
 settings = Settings()

@@ -1,129 +1,241 @@
-import asyncio
-from typing import List, Dict, Any, Optional
+"""
+SearchUtils - Version Python complète
+Intègre le scoring textuel, phonétique et la logique de classement.
+"""
+
 import time
-import psutil
-
-from meilisearch_async import Client as MeiliClient
-import numpy as np
-from Levenshtein import distance as lev_distance
-
-from app.models import QueryData, SearchOptions, ScoredHit, SearchResponse
+from typing import List, Dict, Any, Optional
+from app.config import settings
 from app.scoring.evaluator import FieldEvaluator
-from app.scoring.ranking import Ranker
+from app.scoring.phonetic import PhoneticScorer
+from app.models import QueryData
 
 
-class SearchService:
-    """Delegates Meilisearch queries, deduplication, vectorized scoring and ranking.
+class SearchUtils:
+    """Utilitaire de recherche avec scoring hybride textuel/phonétique."""
 
-    This implementation focuses on being memory- and CPU-friendly by
-    - requesting only required attributes
-    - streaming/processing hits in batches when possible
-    - vectorizing distance computations with numpy where applicable
-    """
+    def __init__(self, max_distance: int = None, synonyms: Optional[Dict] = None):
+        """Initialise SearchUtils avec les évaluateurs."""
+        self.max_distance = max_distance or settings.MAX_LEVENSHTEIN_DISTANCE
+        self.evaluator = FieldEvaluator(max_distance=self.max_distance, synonyms=synonyms)
+        self.phonetic_scorer = PhoneticScorer()
 
-    def __init__(self, meili_host: str = None, meili_key: str = None):
-        self.meili_host = meili_host or "http://127.0.0.1:7700"
-        self.meili_key = meili_key or "masterKey"
-        self.client = MeiliClient(self.meili_host, self.meili_key)
-        self.evaluator = FieldEvaluator()
-        self.ranker = Ranker()
+    # ---------------------------------------------------------------------
+    # Évaluation complète d’un résultat
+    # ---------------------------------------------------------------------
+    def classify_result(self, hit: Dict[str, Any], query_data: QueryData) -> Dict[str, Any]:
+        """
+        Classifie un résultat en combinant score textuel et phonétique.
 
-    async def _meili_search(self, index_name: str, query: str, attributes: List[str], limit: int, filters: Optional[str] = None) -> List[Dict[str, Any]]:
-        index = await self.client.get_index(index_name)
-        search_params = {"limit": limit, "attributesToCrop": [], "attributesToRetrieve": attributes}
-        if filters:
-            search_params['filter'] = filters
-        res = await index.search(query, search_params)
-        # meilisearch-async returns a dict-like with 'hits'
-        hits = res.get('hits', []) if isinstance(res, dict) else []
-        # annotate discovery strategy is done by caller
-        return hits
+        Args:
+            hit: Le hit Meilisearch
+            query_data: Les données de la query préprocessée
 
-    async def _parallel_strategies(self, index_name: str, qdata: QueryData, options: SearchOptions) -> Dict[str, List[Dict[str, Any]]]:
-        limit = options.limit
-        filters = options.filters
-
-        strategies = {
-            'name_search': (qdata.cleaned or qdata.original, ['name_search']),
-            'no_space': (qdata.no_space, ['name_no_space']),
-            'standard': (qdata.original, ['name']),
+        Returns:
+            Hit enrichi avec _score, _match_type, _match_priority
+        """
+        # Conversion QueryData → dict (compatibilité phonétique)
+        query_dict = {
+            'original': query_data.original,
+            'cleaned': query_data.cleaned,
+            'no_space': query_data.no_space,
+            'soundex': query_data.soundex,
+            'wordsCleaned': query_data.wordsCleaned,
+            'wordsOriginal': query_data.wordsOriginal,
+            'wordsNoSpace': query_data.wordsNoSpace,
         }
-        if qdata.soundex:
-            strategies['phonetic'] = (qdata.soundex, ['name_soundex'])
 
-        tasks = []
-        for strat, (q, attrs) in strategies.items():
-            tasks.append(self._meili_search(index_name, q, attrs, limit, filters))
+        # --- Score textuel principal
+        main_score = self.evaluator.calculate_main_score(hit, query_data)
 
-        results = await asyncio.gather(*tasks)
-        return dict(zip(list(strategies.keys()), results))
+        # --- Score phonétique
+        phon_score = self.phonetic_scorer.calculate_phonetic_score(hit, query_dict)
 
-    def _deduplicate(self, all_results: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
-        seen = set()
-        order = ['name_search', 'no_space', 'standard', 'phonetic']
+        # --- Score final hybride
+        final_score = self.evaluator.calculate_final_score(main_score, phon_score)
+
+        # Enrichissement du hit
+        enriched = hit.copy()
+        enriched['_score'] = final_score['score']
+        enriched['_match_type'] = final_score['type']
+        enriched['_match_method'] = final_score['method']
+
+        # Cap strict : seul exact_full peut atteindre 10.0
+        if enriched['_match_type'] != 'exact_full' and enriched['_score'] >= settings.EXACT_THRESHOLD:
+            enriched['_score'] = settings.EXACT_FULL_CAP
+            enriched['_capped'] = True
+
+        # Ajout de la priorité
+        enriched['_match_priority'] = settings.TYPE_PRIORITY.get(
+            enriched['_match_type'],
+            settings.TYPE_PRIORITY['partial']
+        )
+
+        # Détails de scoring
+        enriched['_scoring_details'] = {
+            'main_score': main_score,
+            'phonetic_score': phon_score,
+            'final_method': final_score.get('method'),
+            'weights': final_score.get('weights'),
+        }
+
+        return enriched
+
+    # ---------------------------------------------------------------------
+    # Comparaison et tri
+    # ---------------------------------------------------------------------
+    def compare_penalty_indices(self, a: Dict[str, Any], b: Dict[str, Any]) -> int:
+        """Compare les pénalités pour le tri fin."""
+
+        # 1) Extras par longueur
+        extra_a = a.get('extra_length_ratio', 0.0)
+        extra_b = b.get('extra_length_ratio', 0.0)
+        if abs(extra_a - extra_b) > 0.01:
+            return -1 if extra_a < extra_b else 1
+
+        # 2) Ratio de longueur
+        ratio_a = a.get('longueur_ratio', 1.0)
+        ratio_b = b.get('longueur_ratio', 1.0)
+        if abs(ratio_a - ratio_b) > 0.001:
+            return -1 if ratio_a > ratio_b else 1
+
+        # 3) Distance moyenne
+        dist_a = a.get('distance_moyenne', 0.0)
+        dist_b = b.get('distance_moyenne', 0.0)
+        if dist_a < dist_b:
+            return -1
+        elif dist_a > dist_b:
+            return 1
+        return 0
+
+    def compare_results(self, a: Dict[str, Any], b: Dict[str, Any]) -> int:
+        """Compare deux résultats pour le tri."""
+
+        # 1) Score (descendant)
+        score_a = a.get('_score', 0)
+        score_b = b.get('_score', 0)
+        if score_a != score_b:
+            return -1 if score_a > score_b else 1
+
+        # 2) Priorité du type (ascendant)
+        priority_a = a.get('_match_priority', 999)
+        priority_b = b.get('_match_priority', 999)
+        if priority_a != priority_b:
+            return -1 if priority_a < priority_b else 1
+
+        # 3) Pénalités fines
+        if '_penalty_indices' in a and '_penalty_indices' in b:
+            pen_cmp = self.compare_penalty_indices(a['_penalty_indices'], b['_penalty_indices'])
+            if pen_cmp != 0:
+                return pen_cmp
+
+        # 4) Dénouage stable par ID
+        id_a = a.get('id') or a.get('id_etab', '')
+        id_b = b.get('id') or b.get('id_etab', '')
+        if id_a < id_b:
+            return -1
+        elif id_a > id_b:
+            return 1
+
+        return 0
+
+    def sort_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Trie les résultats selon la logique de comparaison."""
+        from functools import cmp_to_key
+        return sorted(results, key=cmp_to_key(self.compare_results))
+
+    # ---------------------------------------------------------------------
+    # Déduplication et pipeline de traitement
+    # ---------------------------------------------------------------------
+    def deduplicate_results(self, all_results: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+        """
+        Déduplique les résultats par ID en préservant la priorité des stratégies.
+
+        Args:
+            all_results: Dict avec clés 'name_search', 'no_space', 'standard', 'phonetic'
+
+        Returns:
+            Liste unique de hits avec _discovery_strategy
+        """
         unique = []
-        for strat in order:
-            for hit in all_results.get(strat, []):
-                hid = hit.get('id') or hit.get('id_etab')
-                if hid is None:
-                    # fallback to name-based fingerprint
-                    hid = (hit.get('name') or hit.get('nom') or '')[:200]
-                if hid in seen:
-                    continue
-                seen.add(hid)
-                hit['_discovery_strategy'] = strat
-                unique.append(hit)
+        seen = set()
+        priority_order = ['name_search', 'no_space', 'standard', 'phonetic']
+
+        for strategy in priority_order:
+            if strategy not in all_results:
+                continue
+
+            for hit in all_results[strategy]:
+                hit_id = hit.get('id') or hit.get('id_etab')
+
+                # Fallback : fingerprint sur le nom
+                if hit_id is None:
+                    hit_id = (hit.get('name') or hit.get('nom') or '')[:200]
+
+                if hit_id not in seen:
+                    hit['_discovery_strategy'] = strategy
+                    unique.append(hit)
+                    seen.add(hit_id)
+
         return unique
 
-    def _vectorized_score(self, hits: List[Dict[str, Any]], qdata: QueryData, options: SearchOptions) -> List[ScoredHit]:
-        # For memory: process in chunks
-        CHUNK = 200_000
-        out: List[ScoredHit] = []
-        n = len(hits)
-        for i in range(0, n, CHUNK):
-            chunk = hits[i:i+CHUNK]
-            names = [ (h.get('name') or h.get('nom') or '') for h in chunk ]
-            # Compute distances using C extension in a vectorized loop (numpy helps store floats)
-            q = qdata.cleaned or qdata.original
-            dist_arr = np.fromiter((lev_distance(q.lower(), nm.lower()) for nm in names), dtype=np.int32)
-            max_len = np.maximum(np.fromiter((max(len(q), len(nm)) for nm in names), dtype=np.int32), 1)
-            score_arr = (max_len - dist_arr) / max_len * 10.0
-            # small prefix bonus
-            prefix_bonus = np.fromiter((1.5 if nm.lower().startswith(q.lower()) and q else 0.0 for nm in names), dtype=np.float32)
-            final_scores = np.clip(score_arr.astype(np.float32) + prefix_bonus, 0.0, 12.0)
+    def process_results(
+        self,
+        all_results: Dict[str, List[Dict[str, Any]]],
+        query_data: QueryData,
+        limit: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Traite les résultats : déduplique, score, trie et filtre.
 
-            for idx, h in enumerate(chunk):
-                s = float(final_scores[idx])
-                scored = ScoredHit(**{**h, '_score': s, '_match_type': h.get('_discovery_strategy','text'), '_match_priority': 0})
-                out.append(scored)
-        return out
+        Args:
+            all_results: Résultats bruts des stratégies
+            query_data: Données de la query
+            limit: Nombre max de résultats
 
-    def _sort_and_trim(self, scored: List[ScoredHit], limit: int) -> List[Dict[str, Any]]:
-        # convert to dicts for compatibility
-        arr = [s.dict() for s in scored]
-        sorted_arr = self.ranker.rank(arr)
-        return sorted_arr[:limit]
+        Returns:
+            Dict avec hits, total, has_exact_results, etc.
+        """
+        start_time = time.time()
 
-    async def search(self, index_name: str, qdata: QueryData, options: SearchOptions) -> SearchResponse:
-        t0 = time.time()
-        # 1) execute strategies in parallel
-        all_results = await self._parallel_strategies(index_name, qdata, options)
-        # 2) deduplicate by id (priority-preserving)
-        unique = self._deduplicate(all_results)
-        # 3) scoring (vectorized)
-        scored = self._vectorized_score(unique, qdata, options)
-        # 4) sort and trim
-        final = self._sort_and_trim(scored, options.limit)
+        # 1) Déduplication
+        dedup = self.deduplicate_results(all_results)
+        total_before_filter = len(dedup)
 
-        t1 = time.time()
-        resp = SearchResponse(
-            hits=final,
-            total=len(final),
-            has_exact_results=any(h.get('_score',0) >= 10.0 for h in final),
-            exact_count=sum(1 for h in final if h.get('_score',0) >= 10.0),
-            total_before_filter=len(unique),
-            query_time_ms=(t1-t0)*1000.0,
-            preprocessing=qdata,
-            memory_used_mb=psutil.Process().memory_info().rss/1024/1024,
-        )
-        return resp
+        # 2) Scoring et filtrage immédiat
+        enriched = []
+        for hit in dedup:
+            scored = self.classify_result(hit, query_data)
+            if scored.get('_score', 0) >= settings.MIN_SCORE:
+                enriched.append(scored)
+
+        # 3) Tri des résultats
+        sorted_results = self.sort_results(enriched)
+
+        # 4) Détection des résultats exacts
+        exact_results = [h for h in sorted_results if h.get('_score', 0) >= settings.EXACT_THRESHOLD]
+        has_exact_results = len(exact_results) > 0
+
+        # Si exacts trouvés → ne garder qu’eux
+        final_hits = exact_results if has_exact_results else sorted_results
+
+        # 5) Limitation
+        final_hits = final_hits[:limit]
+
+        end_time = time.time()
+
+        return {
+            'hits': final_hits,
+            'total': len(final_hits),
+            'has_exact_results': has_exact_results,
+            'exact_count': len(exact_results),
+            'total_before_filter': total_before_filter,
+            'query_time_ms': round((end_time - start_time) * 1000, 2),
+        }
+
+    # ---------------------------------------------------------------------
+    # Synonymes
+    # ---------------------------------------------------------------------
+    def set_synonyms(self, synonyms: Dict[str, List[str]]) -> None:
+        """Met à jour les synonymes de l'évaluateur."""
+        self.evaluator.synonyms = synonyms or {}
