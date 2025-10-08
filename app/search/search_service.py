@@ -60,6 +60,7 @@ class SearchService:
         results = await asyncio.gather(*tasks)
         return dict(zip(strategies.keys(), results))
 
+    # Fichier : app/search/search_service.py
     async def search(self, index_name: str, qdata: QueryData, options: SearchOptions) -> SearchResponse:
         """Recherche complète : exécution parallèle, déduplication, scoring et tri."""
         t0 = time.time()
@@ -72,6 +73,21 @@ class SearchService:
 
         # 3️⃣ Construction de la réponse finale
         t1 = time.time()
+
+        # Calcul de la durée totale en secondes
+        total_duration_sec = t1 - t0
+
+        # Calcul de la RAM utilisée par le processus (en Mo)
+        memory_used_mb = psutil.Process().memory_info().rss / 1024 / 1024
+
+        # --- AJOUT DU LOGGING ---
+        logger.info(
+            f"Requête complète (index: {index_name}, query: {qdata.original}) : "
+            f"Durée = {total_duration_sec:.4f}s | "
+            f"RAM utilisée = {memory_used_mb:.2f} Mo"
+        )
+        # -------------------------
+
         resp = SearchResponse(
             hits=processed['hits'],
             total=processed['total'],
@@ -80,6 +96,7 @@ class SearchService:
             total_before_filter=processed['total_before_filter'],
             query_time_ms=processed['query_time_ms'],
             preprocessing=qdata,
-            memory_used_mb=psutil.Process().memory_info().rss / 1024 / 1024,
+            # Le calcul est réutilisé ici
+            memory_used_mb=memory_used_mb,
         )
         return resp

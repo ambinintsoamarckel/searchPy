@@ -11,21 +11,45 @@ class FieldEvaluator:
 
     def __init__(self, max_distance: int = settings.MAX_LEVENSHTEIN_DISTANCE, synonyms: Optional[Dict] = None):
         self.max_distance = max_distance
-        self.synonyms = synonyms or {}
 
+        # 1. Stocker le dictionnaire original (optionnel)
+        original_synonyms = synonyms or settings.SYNONYMS_FR
+
+        # 2. Créer la table de recherche inversée (la clé est le mot, la valeur est sa base)
+        self._synonym_lookup: Dict[str, str] = self._build_synonym_lookup(original_synonyms)
+
+    def _build_synonym_lookup(self, synonyms: Dict[str, List[str]]) -> Dict[str, str]:
+        """Construit une map pour un lookup rapide : mot_quelconque -> mot_base."""
+        lookup = {}
+        for base, syns in synonyms.items():
+            # La base pointe vers elle-même
+            lookup[base.lower()] = base.lower()
+            # Chaque synonyme pointe vers la base
+            for syn in syns:
+                lookup[syn.lower()] = base.lower()
+        return lookup
     def apply_synonyms(self, word1: str, word2: str) -> Optional[str]:
-        """Vérifie si deux mots sont synonymes."""
+        """Vérifie si deux mots sont synonymes en utilisant le lookup map."""
         w1 = word1.lower()
         w2 = word2.lower()
 
-        for base, syns in self.synonyms.items():
-            in1 = (w1 == base) or (w1 in syns)
-            in2 = (w2 == base) or (w2 in syns)
-            if in1 and in2:
-                return word2
+        # Récupérer la base canonique de chaque mot.
+        # Utiliser .get(w, w) pour retourner le mot lui-même s'il n'est pas un synonyme connu.
+        base1 = self._synonym_lookup.get(w1, w1)
+        base2 = self._synonym_lookup.get(w2, w2)
+
+        # Si les deux mots ont la même base canonique, ils sont synonymes (ou identiques).
+        if base1 == base2 and base1 in self._synonym_lookup:
+             # On vérifie base1 in self._synonym_lookup pour s'assurer que c'est un mot
+             # qui fait partie du dictionnaire de synonymes (et non juste deux mots
+             # non-synonymes qui sont identiques comme 'pomme' et 'pomme').
+             # Note: L'égalité base1 == base2 est la condition principale.
+
+             # Le mot "base1" existe nécessairement dans le lookup,
+             # car la base est ajoutée dans _build_synonym_lookup.
+             return word2
 
         return None
-
     def calculate_word_match(self, query_word: str, candidate_word: str) -> Dict[str, Any]:
         """Calcule le match entre deux mots."""
         q = query_word.lower()
