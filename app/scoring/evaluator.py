@@ -391,3 +391,65 @@ class FieldEvaluator:
         attenuation_factor = max(0.0, min(1.0, attenuation_factor))
 
         return bonus * attenuation_factor
+    def calculate_final_score(
+        self,
+        main_score: Dict[str, Any],
+        phon_score: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Calcule le score final en combinant score textuel et score phonétique.
+
+        Args:
+            main_score: Dictionnaire contenant 'total_score' et 'match_type'
+            phon_score: Dictionnaire contenant 'score' et 'match_type' (optionnel)
+
+        Returns:
+            Dictionnaire avec le score final, le type de match et la méthode utilisée.
+        """
+        # Sécurité sur les entrées
+        if not main_score or 'total_score' not in main_score:
+            return {
+                'score': 0.0,
+                'type': 'invalid',
+                'method': 'error',
+                'details': {'reason': 'missing_main_score'}
+            }
+
+        text_score = float(main_score.get('total_score', 0))
+        phon_value = float(phon_score.get('score', 0)) if phon_score else 0.0
+
+        # Cas 1 : score textuel excellent → on ignore le phonétique
+        if text_score >= 8.5:
+            return {
+                'score': text_score,
+                'type': main_score.get('match_type', 'text'),
+                'method': 'text_only',
+            }
+
+        # Cas 2 : score textuel bon (6 à 8.5) ET phonétique présent → hybride pondéré
+        if 6.0 <= text_score < 8.5 and phon_value > 0:
+            text_weight = 0.7 + (text_score / 40.0)  # pondération croissante
+            phon_weight = 1.0 - text_weight
+            hybrid_score = (text_score * text_weight) + (phon_value * phon_weight)
+
+            return {
+                'score': round(hybrid_score, 2),
+                'type': 'hybrid',
+                'method': 'weighted',
+                'weights': {'text': round(text_weight, 2), 'phon': round(phon_weight, 2)},
+            }
+
+        # Cas 3 : textuel faible, mais phonétique meilleur → fallback phonétique
+        if phon_value > text_score:
+            return {
+                'score': phon_value,
+                'type': phon_score.get('match_type', 'phonetic') if phon_score else 'phonetic',
+                'method': 'phonetic_fallback',
+            }
+
+        # Cas 4 : par défaut, on garde le score textuel
+        return {
+            'score': text_score,
+            'type': main_score.get('match_type', 'text'),
+            'method': 'text_only',
+        }
