@@ -9,3 +9,4 @@ python-dotenv
 httpx
 pytest
 pydantic-settings
+asyncpg

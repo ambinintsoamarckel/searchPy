@@ -32,6 +32,7 @@ class SearchRequest(BaseModel):
     """Requête de recherche."""
     index_name: str
     query_data: Optional[Union[str,  QueryData]] = None
+    user_id: Optional[int] = None  # 👈 Ajout de user_id dans la requête
     options: SearchOptions = Field(default_factory=SearchOptions)
 
 

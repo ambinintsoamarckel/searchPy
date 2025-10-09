@@ -6,6 +6,8 @@ from typing import Dict
 class Settings(BaseSettings):
     """Configuration de l'application."""
 
+    # ➡️ PostgreSQL Configuration
+    DATABASE_URL: str = "postgresql://user:password@localhost:5432/dbname"  # 👈 NOUVEAU
     # Meilisearch
     MEILISEARCH_URL: str = "http://localhost:7700"
     MEILISEARCH_API_KEY: str = ""
