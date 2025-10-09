@@ -147,12 +147,13 @@ class SearchUtils:
     # ---------------------------------------------------------------------
     # Déduplication et pipeline de traitement
     # ---------------------------------------------------------------------
-    def deduplicate_results(self, all_results: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    def deduplicate_results(self, all_results: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Déduplique les résultats par ID en préservant la priorité des stratégies.
 
         Args:
-            all_results: Dict avec clés 'name_search', 'no_space', 'standard', 'phonetic'
+            all_results: Dict avec clés 'name_search', 'no_space', 'standard', 'phonetic'.
+                         Chaque valeur est le dictionnaire de résultat complet de Meilisearch.
 
         Returns:
             Liste unique de hits avec _discovery_strategy
@@ -165,7 +166,15 @@ class SearchUtils:
             if strategy not in all_results:
                 continue
 
-            for hit in all_results[strategy]:
+            # --- CORRECTION ICI ---
+            # all_results[strategy] est maintenant le dictionnaire de résultat complet Meilisearch
+            # On utilise .get('hits', []) pour obtenir la liste des documents (hits)
+            strategy_results = all_results[strategy].get('hits', [])
+
+            for hit in strategy_results:
+            # for hit in all_results[strategy]: # <-- L'ancienne ligne itérait sur le Dictionnaire, causant des erreurs.
+            # ----------------------
+
                 hit_id = hit.get('id') or hit.get('id_etab')
 
                 # Fallback : fingerprint sur le nom
@@ -178,7 +187,6 @@ class SearchUtils:
                     seen.add(hit_id)
 
         return unique
-
     def process_results(
         self,
         all_results: Dict[str, List[Dict[str, Any]]],

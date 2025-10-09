@@ -1,7 +1,7 @@
 """Modèles Pydantic pour les requêtes et réponses."""
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any,Union
 from pydantic import BaseModel, Field
-
+from app.config import settings
 
 class QueryData(BaseModel):
     """Données de la query préprocessée."""
@@ -18,16 +18,20 @@ class QueryData(BaseModel):
 
 
 class SearchOptions(BaseModel):
-    """Options de recherche."""
-    limit: int = Field(default=1_000_000, ge=1, le=1_000_000)
-    max_distance: int = Field(default=4, ge=0, le=10)
-    filters: Optional[List[str]] = None
+    limit: int = 10
+    offset: int = 0  # Ajout ou confirmation
+    # Le tri pour Meilisearch est une liste de chaînes: ["field:order"]
+    sort: Optional[List[str]] = None
+    # Le champ filters est déjà pris en compte
+    filters: Optional[list[str]] = None
+    max_distance: int = settings.MAX_LEVENSHTEIN_DISTANCE
+    # ... autres options ...
 
 
 class SearchRequest(BaseModel):
     """Requête de recherche."""
     index_name: str
-    query_data: QueryData
+    query_data: Optional[Union[str,  QueryData]] = None
     options: SearchOptions = Field(default_factory=SearchOptions)
 
 

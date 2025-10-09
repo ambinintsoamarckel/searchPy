@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # Limites
     DEFAULT_LIMIT: int = 1_000_000
     MAX_LEVENSHTEIN_DISTANCE: int = 4
-    MIN_SCORE: float = 3.0
+    MIN_SCORE: float = 1.0
 
     # Scoring - Pénalités
     W_MISSING: float = 0.6
