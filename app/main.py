@@ -28,7 +28,7 @@ search_service: SearchService = SearchService(
 
 # --- Configuration et Loggers (inchangée) ---
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-log_file = 'search-api.log'
+log_file = 'logs/search-api.log'
 file_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024 * 5, backupCount=5)
 file_handler.setFormatter(log_formatter)
 logger = logging.getLogger("search-api")
