@@ -22,9 +22,12 @@ resto_pastille_service: RestoPastilleService = RestoPastilleService(db_connector
 
 # Service de recherche (dépend du service de pastilles)
 # Assurez-vous d'inclure les autres dépendances de SearchService si nécessaire
+# Instance principale de SearchService (injectée)
 search_service: SearchService = SearchService(
     resto_pastille_service=resto_pastille_service
 )
+# Alias `service` pour compatibilité avec les tests qui patchent `main.service`
+service = search_service
 
 # --- Configuration et Loggers (inchangée) ---
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -88,11 +91,11 @@ async def search(req: SearchRequest):
         # Pour l'exemple, nous allons le simuler pour éviter les erreurs d'imports
         user_id = 42 # Remplacez ceci par la logique d'extraction réelle
 
-        resp = await search_service.search(
+        resp = await service.search(
             index_name=req.index_name,
             qdata=req.query_data,
             options=req.options,
-            user_id=req.user_id# 👈 Passage du user_id au service
+            user_id=req.user_id #  Passage du user_id au service
         )
         return resp
     except Exception as e:

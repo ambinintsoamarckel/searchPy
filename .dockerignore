@@ -22,3 +22,5 @@ dist
 # Env files
 .env
 .env.*
+.github
+.pytest_cache

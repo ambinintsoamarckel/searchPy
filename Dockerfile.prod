@@ -1,0 +1,53 @@
+# Multi-stage build pour une image encore plus légère
+FROM python:3.13.8-alpine AS builder
+
+# Définition du répertoire de travail
+WORKDIR /app
+
+# Copie des dépendances pour un meilleur cache Docker
+COPY requirements.txt ./
+
+# Installation des dépendances dans un environnement virtuel
+# Cela permet de copier uniquement ce qui est nécessaire dans l'image finale
+RUN apk add --no-cache gcc python3-dev musl-dev linux-headers && \
+    python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt && \
+    apk del gcc python3-dev musl-dev linux-headers
+
+# Stage final - Image de production ultra-légère
+FROM python:3.13.8-alpine
+
+# Installation uniquement des dépendances runtime (bibliothèques partagées)
+RUN apk add --no-cache libgcc libstdc++
+
+# Création d'un utilisateur non-root pour la sécurité
+RUN addgroup -g 1001 -S appuser && \
+    adduser -S appuser -u 1001 -G appuser
+
+# Définition du répertoire de travail
+WORKDIR /app
+
+# Copie de l'environnement virtuel depuis le builder
+COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
+
+# Copie du code de l'application
+COPY --chown=appuser:appuser . .
+
+# Définition du PATH pour utiliser l'environnement virtuel
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Passage à l'utilisateur non-root
+USER appuser
+
+# Exposition du port
+EXPOSE 8000
+
+# Health check pour Docker et orchestrateurs
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
+
+# Commande de démarrage du serveur Uvicorn
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
