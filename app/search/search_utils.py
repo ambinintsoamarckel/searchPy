@@ -34,22 +34,12 @@ class SearchUtils:
         Returns:
             Hit enrichi avec _score, _match_type, _match_priority
         """
-        # Conversion QueryData → dict (compatibilité phonétique)
-        query_dict = {
-            'original': query_data.original,
-            'cleaned': query_data.cleaned,
-            'no_space': query_data.no_space,
-            'soundex': query_data.soundex,
-            'wordsCleaned': query_data.wordsCleaned,
-            'wordsOriginal': query_data.wordsOriginal,
-            'wordsNoSpace': query_data.wordsNoSpace,
-        }
 
         # --- Score textuel principal
         main_score = self.evaluator.calculate_main_score(hit, query_data)
 
         # --- Score phonétique
-        phon_score = self.phonetic_scorer.calculate_phonetic_score(hit, query_dict)
+        phon_score = self.phonetic_scorer.calculate_phonetic_score(hit, query_data)
 
         # --- Score final hybride
         final_score = self.evaluator.calculate_final_score(main_score, phon_score)
@@ -70,14 +60,6 @@ class SearchUtils:
             enriched['_match_type'],
             settings.TYPE_PRIORITY['partial']
         )
-
-        # Détails de scoring
-        enriched['_scoring_details'] = {
-            'main_score': main_score,
-            'phonetic_score': phon_score,
-            'final_method': final_score.get('method'),
-            'weights': final_score.get('weights'),
-        }
 
         return enriched
 

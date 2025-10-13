@@ -3,7 +3,7 @@
 import re
 from typing import List, Dict, Any, Optional
 from app.scoring.distance import string_distance
-
+from app.models import QueryData # Pour l'annotation
 class PhoneticScorer:
     """Scoreur phonétique pour le matching avancé."""
 
@@ -50,9 +50,9 @@ class PhoneticScorer:
 
         return {'found': matches, 'tolerant_used': tolerant_used}
 
-    def calculate_phonetic_score(self, hit: Dict[str, Any], query_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def calculate_phonetic_score(self, hit: Dict[str, Any], query_data: QueryData) -> Optional[Dict[str, Any]]:
         """Calcule le score phonétique d'un hit."""
-        q = query_data.get('soundex', '').strip()
+        q = query_data.soundex.strip()
         h = hit.get('name_soundex', '').strip()
 
         if not q or not h:
