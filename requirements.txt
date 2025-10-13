@@ -10,3 +10,4 @@ httpx
 pytest
 pydantic-settings
 asyncpg
+redis

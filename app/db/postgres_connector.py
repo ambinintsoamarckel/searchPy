@@ -24,19 +24,13 @@ class PostgresConnector:
 
     # ... (Les méthodes execute_query, is_table_exist, create_favori_table restent inchangées) ...
 
-    async def execute_query(self, sql: str, params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        # ... (Logique execute_query inchangée) ...
-        # ... (votre code précédent ici) ...
+    async def execute_query(self, sql: str, *args) -> List[Dict[str, Any]]:
+        """Exécute une requête SQL avec des paramètres variables."""
         if not self._pool:
             raise Exception("Le pool de connexions n'est pas initialisé. Appelez .connect() d'abord.")
 
         async with self._pool.acquire() as conn:
-            if params and 'ids' in params:
-                ids_list = params['ids']
-                rows = await conn.fetch(sql.replace('= ANY(:ids)', '= ANY($1)'), ids_list)
-            else:
-                rows = await conn.fetch(sql)
-
+            rows = await conn.fetch(sql, *args)
             return [dict(row) for row in rows]
 
     async def is_table_exist(self, table_name: str) -> bool:

@@ -4,6 +4,8 @@ import time
 import psutil
 from typing import List, Dict, Any, Optional, Union
 from meilisearch_python_sdk import AsyncClient as MeiliClient
+from app.cache import cache_manager
+import json
 
 # 💡 Importez la classe correcte (RestoPastilleService est maintenant dans .resto_pastille_service)
 from app.search.resto_pastille import RestoPastilleService
@@ -27,6 +29,7 @@ class SearchService:
         self.utils = SearchUtils()
         # Stockage du service injecté
         self.resto_pastille_service = resto_pastille_service
+        self.cache = cache_manager
 
     async def _meili_search(
             self, index_name: str, query: str, attributes: List[str], options: SearchOptions
@@ -94,6 +97,33 @@ class SearchService:
             qdata: Optional[Union[str, QueryData]],
             options: SearchOptions,
             user_id: Optional[int] = None # Paramètre user_id ajouté
+        ) -> SearchResponse:
+
+        # Création d'une clé de cache unique
+        cache_key = f"search:{index_name}:{str(qdata)}:{str(options)}:{user_id}"
+        
+        # 1. Essayer de récupérer depuis le cache
+        cached_result = await self.cache.get(cache_key)
+        if cached_result:
+            logger.info(f"Cache HIT for key: {cache_key}")
+            # Désérialiser la réponse et la retourner
+            return SearchResponse.parse_raw(cached_result)
+
+        logger.info(f"Cache MISS for key: {cache_key}")
+        # 2. Si pas dans le cache, exécuter la recherche
+        response = await self._execute_search(index_name, qdata, options, user_id)
+
+        # 3. Mettre le résultat dans le cache avant de le retourner
+        await self.cache.set(cache_key, response.json(), expire=300) # Cache pour 5 minutes
+
+        return response
+
+    async def _execute_search(
+            self,
+            index_name: str,
+            qdata: Optional[Union[str, QueryData]],
+            options: SearchOptions,
+            user_id: Optional[int] = None
         ) -> SearchResponse:
 
         t0 = time.time()

@@ -220,10 +220,10 @@ class FieldEvaluator:
         name_no_space = str(hit.get('name_no_space', ''))
         name = str(hit.get('name') or hit.get('nom', ''))
 
-        # Tokenization
-        name_search_words = [w for w in re.split(r'\s+', name_search.lower().strip()) if w]
-        name_no_space_words = [w for w in re.split(r'\s+', name_no_space.lower().strip()) if w]
-        name_words = [w for w in re.split(r'\s+', name.lower().strip()) if w]
+        # Tokenization optimisée
+        name_search_words = name_search.lower().split()
+        name_no_space_words = name_no_space.lower().split()
+        name_words = name.lower().split()
 
         # Évaluation name_search
         eval_search = self.evaluate_field(query_clean_words, name_search_words, query_data.cleaned)

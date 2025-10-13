@@ -11,6 +11,7 @@ from .models import SearchRequest, SearchResponse
 from .search.search_service import SearchService
 from .search.resto_pastille import RestoPastilleService
 from .db.postgres_connector import PostgresConnector # 👈 Votre nouveau connecteur
+from .cache import cache_manager # 👈 Votre nouveau manager de cache
 
 # --- Initialisation des variables globales ---
 
@@ -54,8 +55,12 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to connect to PostgreSQL: {e}")
         # Vous pourriez choisir d'arrêter l'application ici
 
-    # 2. Vous pouvez initialiser d'autres clients ici (ex: Meilisearch, caches...)
-    # search_service._meili_client = await initialize_meili()
+    # 2. Initialisation du cache
+    try:
+        await cache_manager.redis.ping()
+        logger.info("Redis cache connected successfully.")
+    except Exception as e:
+        logger.error(f"Failed to connect to Redis: {e}")
 
     yield # L'application commence à traiter les requêtes
 
@@ -66,7 +71,9 @@ async def lifespan(app: FastAPI):
     await db_connector.close()
     logger.info("PostgreSQL connection pool closed.")
 
-    # 2. Nettoyage d'autres ressources (ex: Fermeture du client Meilisearch si nécessaire)
+    # 2. Fermeture de la connexion Redis
+    await cache_manager.close()
+    logger.info("Redis connection closed.")
 
 # Création de l'instance FastAPI en passant le lifespan
 app = FastAPI(

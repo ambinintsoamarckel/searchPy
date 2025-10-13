@@ -1,11 +1,13 @@
 """Calcul de distance Levenshtein optimisé."""
 import Levenshtein as lev
 from typing import Optional
+from functools import lru_cache
 
 
 class StringDistance:
     """Classe pour calculer les distances entre chaînes."""
 
+    @lru_cache(maxsize=4096)
     def distance(self, s1: str, s2: str, max_distance: Optional[int] = None) -> int:
         """
         Calcule la distance de Levenshtein entre deux chaînes.

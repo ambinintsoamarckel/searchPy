@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     MEILISEARCH_URL: str = "http://localhost:7700"
     MEILISEARCH_API_KEY: str = ""
 
+    # Redis
+    REDIS_URL: str = "redis://redis:6379/0"
+
     # Limites
     DEFAULT_LIMIT: int = 1_000_000
     MAX_LEVENSHTEIN_DISTANCE: int = 4

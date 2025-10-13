@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Dict, Any, Optional
 # On ne met pas 'import asyncpg' ici, car seul le Connector en a besoin.
 # from .config import settings # ❌ Retiré: le service n'a pas besoin de la config, seulement du Connector.
@@ -44,22 +45,42 @@ class RestoPastilleService:
         if not all_ids:
             return datas
 
-        # --- 2) Accès à la base de données en bulk (SQL Brutes) ---
+        # --- 2) Accès à la base de données en parallèle avec asyncio.gather ---
 
-        # 2a) is_deleted
-        is_deleted_rows: List[Dict[str, Any]] = await self.db.execute_query(
-            "SELECT id, is_deleted FROM bdd_resto WHERE id = ANY(:ids)",
-            {'ids': all_ids}
-        )
+        # Tâches pour les requêtes
+        tasks = {
+            "is_deleted": self.db.execute_query(
+                "SELECT id, is_deleted FROM bdd_resto WHERE id = ANY($1)", all_ids
+            ),
+            "modifs": self.db.execute_query(
+                "SELECT resto_id, status, action FROM bdd_resto_usrmodif WHERE resto_id = ANY($1)", all_ids
+            )
+        }
+
+        # Ajout de la requête pour les favoris si user_id est fourni
+        if user_id:
+            table_favori = f'favori_etablisment_{user_id}'
+            sql_favori = f"""
+                SELECT idRubrique
+                FROM {table_favori}
+                WHERE (rubriqueType = 'resto' OR rubriqueType = 'restaurant')
+                  AND idRubrique = ANY($1)
+            """
+            tasks["favoris"] = self.db.execute_query(sql_favori, all_ids)
+
+        # Exécution des tâches en parallèle
+        results = await asyncio.gather(*tasks.values())
+
+        # Récupération des résultats
+        is_deleted_rows, modif_rows = results[0], results[1]
+        favori_rows = results[2] if user_id else []
+
+        # --- Construction des maps à partir des résultats ---
+
         is_deleted_map: Dict[int, int] = {
             row['id']: int(row['is_deleted']) for row in is_deleted_rows
         }
 
-        # 2b) Modifs
-        modif_rows: List[Dict[str, Any]] = await self.db.execute_query(
-            "SELECT resto_id, status, action FROM bdd_resto_usrmodif WHERE resto_id = ANY(:ids)",
-            {'ids': all_ids}
-        )
         modif_map: Dict[int, Dict[str, Any]] = {
             int(row['resto_id']): {
                 'status': int(row['status']),
@@ -68,27 +89,9 @@ class RestoPastilleService:
             for row in modif_rows
         }
 
-        # 2c) Favoris : SQL natif
-        favori_map: Dict[int, bool] = {}
-        if user_id:
-            table_favori_folder = f'favori_folder_{user_id}'
-            table_favori = f'favori_etablisment_{user_id}'
-
-            # Requête SQL pour récupérer tous les IDs favoris
-            sql_favori = f"""
-                SELECT idRubrique
-                FROM {table_favori}
-                WHERE (rubriqueType = 'resto' OR rubriqueType = 'restaurant')
-                  AND idRubrique = ANY(:ids)
-            """
-
-            favori_rows: List[Dict[str, Any]] = await self.db.execute_query(
-                sql_favori,
-                {'ids': all_ids}
-            )
-
-            for row in favori_rows:
-                favori_map[int(row['idRubrique'])] = True
+        favori_map: Dict[int, bool] = {
+            int(row['idRubrique']): True for row in favori_rows
+        } if user_id else {}
 
         # 3) Enrichir datas (boucle finale)
         for data in datas:
