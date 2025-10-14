@@ -56,10 +56,17 @@ class FieldEvaluator:
 
         max_dist = min(self.max_distance, string_distance.dynamic_max(q))
         distance = string_distance.distance(q, c, max_dist)
-        return {"distance": distance, "type": "levenshtein", "matched_word": candidate_word}
+        return {
+            "distance": distance,
+            "type": "levenshtein",
+            "matched_word": candidate_word
+        }
 
     def find_best_word_match(
-        self, query_word: str, candidate_words: List[str], used_positions: Dict[int, bool]
+        self,
+        query_word: str,
+        candidate_words: List[str],
+        used_positions: Dict[int, bool]
     ) -> Optional[Dict[str, Any]]:
         """Trouve le meilleur match pour un mot de la query."""
         best_match = None
@@ -106,7 +113,9 @@ class FieldEvaluator:
 
         found_positions = {f["position"] for f in found}
         extra_length = sum(
-            len(word) for pos, word in enumerate(candidate_words) if pos not in found_positions
+            len(word)
+            for pos, word in enumerate(candidate_words)
+            if pos not in found_positions
         )
         query_length = len(query_text)
         extra_length_ratio = extra_length / query_length if query_length > 0 else 0.0
@@ -186,10 +195,20 @@ class FieldEvaluator:
         search_valid = name_search_score > 0 and eval_search["found_count"] > 0
         no_space_valid = no_space_score > 0 and eval_no_space["found_count"] > 0
 
-        if no_space_valid and (not search_valid or no_space_score >= name_search_score):
-            return {"strategy": "no_space", "base_score": no_space_score, "eval": eval_no_space}
+        if no_space_valid and (
+            not search_valid or no_space_score >= name_search_score
+        ):
+            return {
+                "strategy": "no_space",
+                "base_score": no_space_score,
+                "eval": eval_no_space
+            }
         if search_valid:
-            return {"strategy": "name_search", "base_score": name_search_score, "eval": eval_search}
+            return {
+                "strategy": "name_search",
+                "base_score": name_search_score,
+                "eval": eval_search
+            }
         return {"strategy": "none", "base_score": 0.0, "eval": eval_search}
 
     def _determine_match_type(
@@ -227,8 +246,11 @@ class FieldEvaluator:
         """Calcule le score principal (name_search vs no_space)."""
         if not query_data.wordsCleaned:
             return {
-                "total_score": 0.0, "winning_strategy": "none", "match_type": "partial",
-                "match_priority": settings.TYPE_PRIORITY["partial"], "details": {"error": "empty_query"}
+                "total_score": 0.0,
+                "winning_strategy": "none",
+                "match_type": "partial",
+                "match_priority": settings.TYPE_PRIORITY["partial"],
+                "details": {"error": "empty_query"}
             }
 
         name_search_words = str(hit.get("name_search", "")).lower().split()
@@ -264,11 +286,16 @@ class FieldEvaluator:
         )
 
         return {
-            "name_search_score": name_search_score, "no_space_score": no_space_score,
-            "base_score": base_score, "winning_strategy": winner["strategy"],
-            "name_score": bonus, "total_score": total_score,
-            "name_search_matches": eval_search, "no_space_matches": eval_no_space,
-            "name_matches": eval_name, "_penalty_indices": winning_eval["penalties"],
+            "name_search_score": name_search_score,
+            "no_space_score": no_space_score,
+            "base_score": base_score,
+            "winning_strategy": winner["strategy"],
+            "name_score": bonus,
+            "total_score": total_score,
+            "name_search_matches": eval_search,
+            "no_space_matches": eval_no_space,
+            "name_matches": eval_name,
+            "_penalty_indices": winning_eval["penalties"],
             "all_words_found": winning_eval["penalties"]["mots_manquants"] == 0,
             "match_type": match_type,
             "match_priority": settings.TYPE_PRIORITY.get(
@@ -281,10 +308,14 @@ class FieldEvaluator:
         score_terms = 0.0
         for m in found_matches:
             dist = m["distance"]
-            if dist == 0: score_terms += 1.0
-            elif dist == 1: score_terms += 0.7
-            elif dist == 2: score_terms += 0.4
-            else: score_terms += 0.2
+            if dist == 0:
+                score_terms += 1.0
+            elif dist == 1:
+                score_terms += 0.7
+            elif dist == 2:
+                score_terms += 0.4
+            else:
+                score_terms += 0.2
         return score_terms
 
     def calculate_name_bonus(
@@ -332,7 +363,8 @@ class FieldEvaluator:
 
         if text_score >= 8.5:
             return {
-                "score": text_score, "type": main_score.get("match_type", "text"),
+                "score": text_score,
+                "type": main_score.get("match_type", "text"),
                 "method": "text_only",
             }
 
@@ -341,18 +373,28 @@ class FieldEvaluator:
             phon_weight = 1.0 - text_weight
             hybrid_score = (text_score * text_weight) + (phon_value * phon_weight)
             return {
-                "score": round(hybrid_score, 2), "type": "hybrid", "method": "weighted",
-                "weights": {"text": round(text_weight, 2), "phon": round(phon_weight, 2)},
+                "score": round(hybrid_score, 2),
+                "type": "hybrid",
+                "method": "weighted",
+                "weights": {
+                    "text": round(text_weight, 2),
+                    "phon": round(phon_weight, 2)
+                },
             }
 
         if phon_value > text_score:
+            phon_type = (
+                phon_score.get("match_type", "phonetic") if phon_score
+                else "phonetic"
+            )
             return {
                 "score": phon_value,
-                "type": phon_score.get("match_type", "phonetic") if phon_score else "phonetic",
+                "type": phon_type,
                 "method": "phonetic_fallback",
             }
 
         return {
-            "score": text_score, "type": main_score.get("match_type", "text"),
+            "score": text_score,
+            "type": main_score.get("match_type", "text"),
             "method": "text_only",
         }
