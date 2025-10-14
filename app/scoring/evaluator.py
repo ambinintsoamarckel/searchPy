@@ -1,92 +1,65 @@
 """Évaluation et scoring des champs."""
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from app.config import settings
-from app.scoring.distance import string_distance
 from app.models import QueryData
+from app.scoring.distance import string_distance
 
 
 class FieldEvaluator:
     """Évaluateur de champs pour le scoring."""
 
-    def __init__(self,
-                max_distance: int = settings.MAX_LEVENSHTEIN_DISTANCE,
-                synonyms: Optional[Dict] = None):
+    def __init__(
+        self,
+        max_distance: int = settings.MAX_LEVENSHTEIN_DISTANCE,
+        synonyms: Optional[Dict] = None,
+    ):
         self.max_distance = max_distance
-
-        # 1. Stocker le dictionnaire original (optionnel)
         original_synonyms = synonyms or settings.SYNONYMS_FR
+        self._synonym_lookup: Dict[str, str] = self._build_synonym_lookup(
+            original_synonyms
+        )
 
-        # 2. Créer la table de recherche inversée (la clé est le mot, la valeur est sa base)
-        self._synonym_lookup: Dict[str, str] = self._build_synonym_lookup(original_synonyms)
-
-    def _build_synonym_lookup(self, synonyms: Dict[str, List[str]]) -> Dict[str, str]:
+    def _build_synonym_lookup(
+        self, synonyms: Dict[str, List[str]]
+    ) -> Dict[str, str]:
         """Construit une map pour un lookup rapide : mot_quelconque -> mot_base."""
         lookup = {}
         for base, syns in synonyms.items():
-            # La base pointe vers elle-même
             lookup[base.lower()] = base.lower()
-            # Chaque synonyme pointe vers la base
             for syn in syns:
                 lookup[syn.lower()] = base.lower()
         return lookup
+
     def apply_synonyms(self, word1: str, word2: str) -> Optional[str]:
         """Vérifie si deux mots sont synonymes en utilisant le lookup map."""
         w1 = word1.lower()
         w2 = word2.lower()
-
-        # Récupérer la base canonique de chaque mot.
-        # Utiliser .get(w, w) pour retourner le mot lui-même s'il n'est pas un synonyme connu.
         base1 = self._synonym_lookup.get(w1, w1)
         base2 = self._synonym_lookup.get(w2, w2)
-
-        # Si les deux mots ont la même base canonique, ils sont synonymes (ou identiques).
         if base1 == base2 and base1 in self._synonym_lookup:
-             # On vérifie base1 in self._synonym_lookup pour s'assurer que c'est un mot
-             # qui fait partie du dictionnaire de synonymes (et non juste deux mots
-             # non-synonymes qui sont identiques comme 'pomme' et 'pomme').
-             # Note: L'égalité base1 == base2 est la condition principale.
-
-             # Le mot "base1" existe nécessairement dans le lookup,
-             # car la base est ajoutée dans _build_synonym_lookup.
             return word2
-
         return None
-    def calculate_word_match(self, query_word: str, candidate_word: str) -> Dict[str, Any]:
+
+    def calculate_word_match(
+        self, query_word: str, candidate_word: str
+    ) -> Dict[str, Any]:
         """Calcule le match entre deux mots."""
         q = query_word.lower()
         c = candidate_word.lower()
 
-        # Match exact
         if q == c:
-            return {
-                'distance': 0,
-                'type': 'exact',
-                'matched_word': candidate_word
-            }
+            return {"distance": 0, "type": "exact", "matched_word": candidate_word}
 
-        # Synonyme
         if self.apply_synonyms(q, c) is not None:
-            return {
-                'distance': 0,
-                'type': 'synonym',
-                'matched_word': candidate_word
-            }
+            return {"distance": 0, "type": "synonym", "matched_word": candidate_word}
 
-        # Levenshtein
         max_dist = min(self.max_distance, string_distance.dynamic_max(q))
         distance = string_distance.distance(q, c, max_dist)
-
-        return {
-            'distance': distance,
-            'type': 'levenshtein',
-            'matched_word': candidate_word
-        }
+        return {"distance": distance, "type": "levenshtein", "matched_word": candidate_word}
 
     def find_best_word_match(
-        self,
-        query_word: str,
-        candidate_words: List[str],
-        used_positions: Dict[int, bool]
+        self, query_word: str, candidate_words: List[str], used_positions: Dict[int, bool]
     ) -> Optional[Dict[str, Any]]:
         """Trouve le meilleur match pour un mot de la query."""
         best_match = None
@@ -97,387 +70,289 @@ class FieldEvaluator:
                 continue
 
             match = self.calculate_word_match(query_word, candidate_word)
-
-            if match['distance'] < best_distance:
+            if match["distance"] < best_distance:
                 best_match = match
-                best_match['position'] = position
-                best_distance = match['distance']
-
+                best_match["position"] = position
+                best_distance = match["distance"]
                 if best_distance == 0:
                     break
 
         if best_match:
-            used_positions[best_match['position']] = True
-
+            used_positions[best_match["position"]] = True
         return best_match
 
-    def evaluate_field(
+    def _calculate_evaluation_metrics(
         self,
+        found: List[Dict],
+        not_found: List[str],
+        total_distance: int,
         query_words: List[str],
         candidate_words: List[str],
-        query_text: str
+        query_text: str,
     ) -> Dict[str, Any]:
-        """
-        Évalue un champ en comparant les mots de la query aux mots du candidat.
-
-        Returns:
-            Dict contenant found, not_found, distances, pénalités, etc.
-        """
-        found = []
-        not_found = []
-        total_distance = 0
-        used_positions = {}
-
-        # Match de chaque mot de la query
-        for q_word in query_words:
-            best = self.find_best_word_match(q_word, candidate_words, used_positions)
-
-            if best and best['distance'] <= self.max_distance:
-                found.append({
-                    'query_word': q_word,
-                    'matched_word': best['matched_word'],
-                    'distance': best['distance'],
-                    'type': best['type'],
-                    'position': best['position']
-                })
-                total_distance += best['distance']
-            else:
-                not_found.append(q_word)
-
+        """Calcule les métriques de l'évaluation."""
         found_count = len(found)
         query_count = len(query_words)
-        result_count = len(candidate_words)
-
+        candidate_count = len(candidate_words)
         avg_distance = total_distance / found_count if found_count > 0 else 0.0
         missing_terms = len(not_found)
+
         length_ratio = (
-            min(query_count, result_count) / max(query_count, result_count)
-            if query_count and result_count else 1.0
+            min(query_count, candidate_count) / max(query_count, candidate_count)
+            if query_count and candidate_count
+            else 1.0
         )
         coverage_ratio = found_count / query_count if query_count > 0 else 1.0
 
-        # Calcul de la longueur des extras
-        extra_length = 0
-        found_positions = [f['position'] for f in found]
-        for pos, word in enumerate(candidate_words):
-            if pos not in found_positions:
-                extra_length += len(word)
-
+        found_positions = {f["position"] for f in found}
+        extra_length = sum(
+            len(word) for pos, word in enumerate(candidate_words) if pos not in found_positions
+        )
         query_length = len(query_text)
         extra_length_ratio = extra_length / query_length if query_length > 0 else 0.0
 
-        return {
-            'found': found,
-            'not_found': not_found,
-            'total_distance': total_distance,
-            'average_distance': avg_distance,
-            'found_count': found_count,
-            'query_count': query_count,
-            'result_count': result_count,
-            'extra_length': extra_length,
-            'extra_length_ratio': extra_length_ratio,
-            'penalties': {
-                'mots_manquants': missing_terms,
-                'distance_moyenne': avg_distance,
-                'longueur_ratio': length_ratio,
-                'coverage_ratio': coverage_ratio,
-                'extra_length': extra_length,
-                'extra_length_ratio': extra_length_ratio,
-            }
+        metrics = {
+            "total_distance": total_distance,
+            "average_distance": avg_distance,
+            "found_count": found_count,
+            "query_count": query_count,
+            "result_count": candidate_count,
+            "extra_length": extra_length,
+            "extra_length_ratio": extra_length_ratio,
         }
+        metrics["penalties"] = {
+            "mots_manquants": missing_terms,
+            "distance_moyenne": avg_distance,
+            "longueur_ratio": length_ratio,
+            "coverage_ratio": coverage_ratio,
+            "extra_length": extra_length,
+            "extra_length_ratio": extra_length_ratio,
+        }
+        return metrics
 
-    def calculate_main_score(self,
-                            hit: Dict[str, Any],
-                            query_data: QueryData) -> Dict[str, Any]:
-        """
-        Calcule le score principal (name_search vs no_space).
+    def evaluate_field(
+        self, query_words: List[str], candidate_words: List[str], query_text: str
+    ) -> Dict[str, Any]:
+        """Évalue un champ en comparant les mots de la query aux mots du candidat."""
+        found, not_found, total_distance = [], [], 0
+        used_positions: Dict[int, bool] = {}
 
-        Args:
-            hit: Le hit Meilisearch
-            query_data: Les données de la query préprocessée
-
-        Returns:
-            Dict avec scores, match_type, winning_strategy, etc.
-        """
-        query_clean_words = query_data.wordsCleaned
-        query_original_words = query_data.wordsOriginal
-        query_no_space_words = query_data.wordsNoSpace
-
-        if not query_clean_words:
-            return {
-                'name_search_score': 0.0,
-                'no_space_score': 0.0,
-                'base_score': 0.0,
-                'name_score': 0.0,
-                'total_score': 0.0,
-                'winning_strategy': 'none',
-                '_penalty_indices': {},
-                'details': {'error': 'empty_query'},
-                'all_words_found': False,
-                'match_type': 'partial',
-                'match_priority': settings.TYPE_PRIORITY['partial'],
-            }
-
-        # Extraction des champs
-        name_search = str(hit.get('name_search', ''))
-        name_no_space = str(hit.get('name_no_space', ''))
-        name = str(hit.get('name') or hit.get('nom', ''))
-
-        # Tokenization optimisée
-        name_search_words = name_search.lower().split()
-        name_no_space_words = name_no_space.lower().split()
-        name_words = name.lower().split()
-
-        # Évaluation name_search
-        eval_search = self.evaluate_field(query_clean_words, name_search_words, query_data.cleaned)
-        p_search = eval_search['penalties']
-
-        if eval_search['found_count'] == 0:
-            name_search_score_adj = 0.0
-        else:
-            name_search_score = 10 - eval_search['total_distance']
-            name_search_score = max(0.0, min(10.0, name_search_score))
-
-            penalty_search = (
-                settings.W_MISSING * p_search['mots_manquants']
-                + settings.W_FUZZY * max(0.0, p_search['distance_moyenne'])
-                + settings.W_RATIO * (1.0 - max(0.0, min(1.0, p_search['longueur_ratio'])))
-                + settings.W_EXTRA_LENGTH * p_search['extra_length_ratio'] * 10
-            )
-            name_search_score_adj = max(0.0, name_search_score - penalty_search)
-
-        # Évaluation no_space
-        eval_no_space = self.evaluate_field(query_no_space_words,
-                                             name_no_space_words,
-                                               query_data.no_space)
-        p_no_space = eval_no_space['penalties']
-
-        if eval_no_space['found_count'] == 0:
-            no_space_score_adj = 0.0
-        else:
-            no_space_score = 10 - eval_no_space['total_distance']
-            no_space_score = max(0.0, min(10.0, no_space_score))
-
-            penalty_no_space = (
-                settings.W_MISSING * p_no_space['mots_manquants']
-                + settings.W_FUZZY * max(0.0, p_no_space['distance_moyenne'])
-                + settings.W_RATIO * (1.0 - max(0.0, min(1.0, p_no_space['longueur_ratio'])))
-                + settings.W_EXTRA_LENGTH * p_no_space['extra_length_ratio'] * 10
-            )
-            no_space_score_adj = max(0.0, no_space_score - penalty_no_space)
-
-            # Seuil minimal no_space
-            if no_space_score_adj < settings.NO_SPACE_MIN_SCORE:
-                no_space_score_adj = 0.0
-
-        # Choix de la stratégie gagnante
-        search_valid = name_search_score_adj > 0 and eval_search['found_count'] > 0
-        no_space_valid = no_space_score_adj > 0 and eval_no_space['found_count'] > 0
-
-        if no_space_valid and (not search_valid or no_space_score_adj >= name_search_score_adj):
-            winning_strategy = 'no_space'
-            base_score = no_space_score_adj
-            winning_eval = eval_no_space
-            winning_penalties = p_no_space
-        elif search_valid:
-            winning_strategy = 'name_search'
-            base_score = name_search_score_adj
-            winning_eval = eval_search
-            winning_penalties = p_search
-        else:
-            winning_strategy = 'none'
-            base_score = 0.0
-            winning_eval = eval_search
-            winning_penalties = p_search
-
-        # Bonus sur name
-        eval_name = self.evaluate_field(query_original_words, name_words, query_data.original)
-        bonus = self.calculate_name_bonus(eval_name, query_original_words)
-
-        total_score = min(12.0, base_score + bonus)
-
-        # Détermination du match_type
-        no_winning_match = winning_eval['found_count'] == 0
-
-        if no_winning_match:
-            match_type = 'partial'
-        else:
-            avg = winning_eval['average_distance']
-            missing = winning_penalties['mots_manquants']
-            extra_ratio = winning_penalties['extra_length_ratio']
-
-            if avg == 0.0:
-                if missing == 0 and extra_ratio == 0.0:
-                    match_type = 'exact_full'
-                elif missing == 0:
-                    match_type = 'no_space_match' if winning_strategy == 'no_space' else 'exact_with_extras'
-                else:
-                    match_type = 'exact_with_missing'
+        for q_word in query_words:
+            best = self.find_best_word_match(q_word, candidate_words, used_positions)
+            if best and best["distance"] <= self.max_distance:
+                found.append(
+                    {
+                        "query_word": q_word,
+                        "matched_word": best["matched_word"],
+                        "distance": best["distance"],
+                        "type": best["type"],
+                        "position": best["position"],
+                    }
+                )
+                total_distance += best["distance"]
             else:
-                match_type = 'fuzzy_full' if missing == 0 else 'fuzzy_partial'
+                not_found.append(q_word)
 
-            if match_type == 'fuzzy_full' and total_score >= 8.0:
-                match_type = 'near_perfect'
-
-        return {
-            'name_search_score': name_search_score_adj,
-            'no_space_score': no_space_score_adj,
-            'base_score': base_score,
-            'winning_strategy': winning_strategy,
-            'name_score': bonus,
-            'total_score': total_score,
-            'name_search_matches': {
-                'found': eval_search['found'],
-                'not_found': eval_search['not_found'],
-                'total_distance': eval_search['total_distance'],
-                'average_distance': eval_search['average_distance'],
-                'extra_length': eval_search['extra_length'],
-                'extra_length_ratio': eval_search['extra_length_ratio'],
-            },
-            'no_space_matches': {
-                'found': eval_no_space['found'],
-                'not_found': eval_no_space['not_found'],
-                'total_distance': eval_no_space['total_distance'],
-                'average_distance': eval_no_space['average_distance'],
-                'extra_length': eval_no_space['extra_length'],
-                'extra_length_ratio': eval_no_space['extra_length_ratio'],
-            },
-            'name_matches': {
-                'found': eval_name['found'],
-                'not_found': eval_name['not_found'],
-                'total_distance': eval_name['total_distance'],
-                'average_distance': eval_name['average_distance'],
-                'extra_length': eval_name['extra_length'],
-                'extra_length_ratio': eval_name['extra_length_ratio'],
-            },
-            '_penalty_indices': winning_penalties,
-            'all_words_found': winning_penalties['mots_manquants'] == 0,
-            'match_type': match_type,
-            'match_priority': settings.TYPE_PRIORITY.get(match_type, settings.TYPE_PRIORITY['partial']),
-            'details': {
-                'query_words_count': len(query_clean_words),
-                'name_search_words_count': len(name_search_words),
-                'no_space_words_count': len(name_no_space_words),
-                'name_words_count': len(name_words),
-            }
-        }
-
-    def calculate_name_bonus(
-        self,
-        eval_name: Dict[str, Any],
-        query_words: List[str],
-    ) -> float:
-        """Calcule le bonus progressif sur le champ name."""
-        query_word_count = len(query_words)
-        name_word_count = eval_name['result_count']
-
-        # Ratio nombre de mots
-        word_count_ratio = (
-            min(query_word_count, name_word_count) / max(query_word_count, name_word_count)
-            if name_word_count > 0 else 0.0
+        metrics = self._calculate_evaluation_metrics(
+            found, not_found, total_distance, query_words, candidate_words, query_text
         )
+        return {"found": found, "not_found": not_found, **metrics}
 
-        # Ratio longueur d'extras
-        extra_length_ratio = eval_name['extra_length_ratio']
-
-        # Gates
-        if word_count_ratio < settings.BONUS_WORD_RATIO_MIN or extra_length_ratio > settings.BONUS_EXTRA_RATIO_MAX:
+    def _calculate_strategy_score(self, eval_result: Dict[str, Any]) -> float:
+        """Calcule le score ajusté pour une évaluation de stratégie."""
+        if eval_result["found_count"] == 0:
             return 0.0
 
-        # Score pondéré des termes trouvés
-        score_terms = 0.0
-        for m in eval_name['found']:
-            dist = m['distance']
-            if dist == 0:
-                score_terms += 1.0
-            elif dist == 1:
-                score_terms += 0.7
-            elif dist == 2:
-                score_terms += 0.4
+        p = eval_result["penalties"]
+        score = 10 - eval_result["total_distance"]
+        score = max(0.0, min(10.0, score))
+
+        penalty = (
+            settings.W_MISSING * p["mots_manquants"]
+            + settings.W_FUZZY * max(0.0, p["distance_moyenne"])
+            + settings.W_RATIO * (1.0 - max(0.0, min(1.0, p["longueur_ratio"])))
+            + settings.W_EXTRA_LENGTH * p["extra_length_ratio"] * 10
+        )
+        return max(0.0, score - penalty)
+
+    def _determine_winning_strategy(
+        self,
+        name_search_score: float,
+        no_space_score: float,
+        eval_search: Dict[str, Any],
+        eval_no_space: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Détermine la stratégie gagnante entre name_search et no_space."""
+        search_valid = name_search_score > 0 and eval_search["found_count"] > 0
+        no_space_valid = no_space_score > 0 and eval_no_space["found_count"] > 0
+
+        if no_space_valid and (not search_valid or no_space_score >= name_search_score):
+            return {"strategy": "no_space", "base_score": no_space_score, "eval": eval_no_space}
+        if search_valid:
+            return {"strategy": "name_search", "base_score": name_search_score, "eval": eval_search}
+        return {"strategy": "none", "base_score": 0.0, "eval": eval_search}
+
+    def _determine_match_type(
+        self, winning_eval: Dict[str, Any], winning_strategy: str, total_score: float
+    ) -> str:
+        """Détermine le type de match basé sur l'évaluation gagnante."""
+        if winning_eval["found_count"] == 0:
+            return "partial"
+
+        avg = winning_eval["average_distance"]
+        missing = winning_eval["penalties"]["mots_manquants"]
+        extra_ratio = winning_eval["penalties"]["extra_length_ratio"]
+
+        if avg == 0.0:
+            if missing == 0 and extra_ratio == 0.0:
+                match_type = "exact_full"
+            elif missing == 0:
+                match_type = (
+                    "no_space_match"
+                    if winning_strategy == "no_space"
+                    else "exact_with_extras"
+                )
             else:
-                score_terms += 0.2
+                match_type = "exact_with_missing"
+        else:
+            match_type = "fuzzy_full" if missing == 0 else "fuzzy_partial"
 
-        max_score = max(1, query_word_count)
-        score_ratio = score_terms / max_score
+        if match_type == "fuzzy_full" and total_score >= 8.0:
+            match_type = "near_perfect"
+        return match_type
 
-        # Bonus de base
-        bonus_base = settings.BONUS_MAX * score_ratio
+    def calculate_main_score(
+        self, hit: Dict[str, Any], query_data: QueryData
+    ) -> Dict[str, Any]:
+        """Calcule le score principal (name_search vs no_space)."""
+        if not query_data.wordsCleaned:
+            return {
+                "total_score": 0.0, "winning_strategy": "none", "match_type": "partial",
+                "match_priority": settings.TYPE_PRIORITY["partial"], "details": {"error": "empty_query"}
+            }
 
-        # Réductions
-        pn = eval_name['penalties']
-        bonus_reduction = (
-            settings.BONUS_A_MISSING * pn['mots_manquants']
-            + settings.BONUS_C_AVGDIST * max(0.0, eval_name['average_distance'])
-            + settings.BONUS_MAX * extra_length_ratio * 0.6
+        name_search_words = str(hit.get("name_search", "")).lower().split()
+        name_no_space_words = str(hit.get("name_no_space", "")).lower().split()
+
+        eval_search = self.evaluate_field(
+            query_data.wordsCleaned, name_search_words, query_data.cleaned
+        )
+        name_search_score = self._calculate_strategy_score(eval_search)
+
+        eval_no_space = self.evaluate_field(
+            query_data.wordsNoSpace, name_no_space_words, query_data.no_space
+        )
+        no_space_score = self._calculate_strategy_score(eval_no_space)
+        if no_space_score < settings.NO_SPACE_MIN_SCORE:
+            no_space_score = 0.0
+
+        winner = self._determine_winning_strategy(
+            name_search_score, no_space_score, eval_search, eval_no_space
+        )
+        base_score = winner["base_score"]
+        winning_eval = winner["eval"]
+
+        name_words = str(hit.get("name") or hit.get("nom", "")).lower().split()
+        eval_name = self.evaluate_field(
+            query_data.wordsOriginal, name_words, query_data.original
+        )
+        bonus = self.calculate_name_bonus(eval_name, query_data.wordsOriginal)
+        total_score = min(12.0, base_score + bonus)
+
+        match_type = self._determine_match_type(
+            winning_eval, winner["strategy"], total_score
         )
 
+        return {
+            "name_search_score": name_search_score, "no_space_score": no_space_score,
+            "base_score": base_score, "winning_strategy": winner["strategy"],
+            "name_score": bonus, "total_score": total_score,
+            "name_search_matches": eval_search, "no_space_matches": eval_no_space,
+            "name_matches": eval_name, "_penalty_indices": winning_eval["penalties"],
+            "all_words_found": winning_eval["penalties"]["mots_manquants"] == 0,
+            "match_type": match_type,
+            "match_priority": settings.TYPE_PRIORITY.get(
+                match_type, settings.TYPE_PRIORITY["partial"]
+            ),
+        }
+
+    def _calculate_bonus_score_terms(self, found_matches: List[Dict]) -> float:
+        """Calcule le score pondéré des termes trouvés pour le bonus."""
+        score_terms = 0.0
+        for m in found_matches:
+            dist = m["distance"]
+            if dist == 0: score_terms += 1.0
+            elif dist == 1: score_terms += 0.7
+            elif dist == 2: score_terms += 0.4
+            else: score_terms += 0.2
+        return score_terms
+
+    def calculate_name_bonus(
+        self, eval_name: Dict[str, Any], query_words: List[str]
+    ) -> float:
+        """Calcule le bonus progressif sur le champ name."""
+        pn = eval_name["penalties"]
+        word_count_ratio = pn["longueur_ratio"]
+        extra_length_ratio = pn["extra_length_ratio"]
+
+        if (
+            word_count_ratio < settings.BONUS_WORD_RATIO_MIN
+            or extra_length_ratio > settings.BONUS_EXTRA_RATIO_MAX
+        ):
+            return 0.0
+
+        score_terms = self._calculate_bonus_score_terms(eval_name["found"])
+        score_ratio = score_terms / max(1, len(query_words))
+        bonus_base = settings.BONUS_MAX * score_ratio
+
+        bonus_reduction = (
+            settings.BONUS_A_MISSING * pn["mots_manquants"]
+            + settings.BONUS_C_AVGDIST * max(0.0, eval_name["average_distance"])
+            + settings.BONUS_MAX * extra_length_ratio * 0.6
+        )
         bonus = max(0.0, min(settings.BONUS_MAX, bonus_base - bonus_reduction))
 
-        # Atténuation selon ratio
         attenuation_range = 1.0 - settings.BONUS_WORD_RATIO_MIN
-        attenuation_factor = (word_count_ratio - settings.BONUS_WORD_RATIO_MIN) / attenuation_range
+        attenuation_factor = (
+            (word_count_ratio - settings.BONUS_WORD_RATIO_MIN) / attenuation_range
+        )
         attenuation_factor = max(0.0, min(1.0, attenuation_factor))
 
         return bonus * attenuation_factor
+
     def calculate_final_score(
-        self,
-        main_score: Dict[str, Any],
-        phon_score: Optional[Dict[str, Any]] = None
+        self, main_score: Dict[str, Any], phon_score: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """
-        Calcule le score final en combinant score textuel et score phonétique.
+        """Calcule le score final en combinant score textuel et score phonétique."""
+        if not main_score or "total_score" not in main_score:
+            return {"score": 0.0, "type": "invalid", "method": "error"}
 
-        Args:
-            main_score: Dictionnaire contenant 'total_score' et 'match_type'
-            phon_score: Dictionnaire contenant 'score' et 'match_type' (optionnel)
+        text_score = float(main_score.get("total_score", 0))
+        phon_value = float(phon_score.get("score", 0)) if phon_score else 0.0
 
-        Returns:
-            Dictionnaire avec le score final, le type de match et la méthode utilisée.
-        """
-        # Sécurité sur les entrées
-        if not main_score or 'total_score' not in main_score:
-            return {
-                'score': 0.0,
-                'type': 'invalid',
-                'method': 'error',
-                'details': {'reason': 'missing_main_score'}
-            }
-
-        text_score = float(main_score.get('total_score', 0))
-        phon_value = float(phon_score.get('score', 0)) if phon_score else 0.0
-
-        # Cas 1 : score textuel excellent → on ignore le phonétique
         if text_score >= 8.5:
             return {
-                'score': text_score,
-                'type': main_score.get('match_type', 'text'),
-                'method': 'text_only',
+                "score": text_score, "type": main_score.get("match_type", "text"),
+                "method": "text_only",
             }
 
-        # Cas 2 : score textuel bon (6 à 8.5) ET phonétique présent → hybride pondéré
         if 6.0 <= text_score < 8.5 and phon_value > 0:
-            text_weight = 0.7 + (text_score / 40.0)  # pondération croissante
+            text_weight = 0.7 + (text_score / 40.0)
             phon_weight = 1.0 - text_weight
             hybrid_score = (text_score * text_weight) + (phon_value * phon_weight)
-
             return {
-                'score': round(hybrid_score, 2),
-                'type': 'hybrid',
-                'method': 'weighted',
-                'weights': {'text': round(text_weight, 2), 'phon': round(phon_weight, 2)},
+                "score": round(hybrid_score, 2), "type": "hybrid", "method": "weighted",
+                "weights": {"text": round(text_weight, 2), "phon": round(phon_weight, 2)},
             }
 
-        # Cas 3 : textuel faible, mais phonétique meilleur → fallback phonétique
         if phon_value > text_score:
             return {
-                'score': phon_value,
-                'type': phon_score.get('match_type', 'phonetic') if phon_score else 'phonetic',
-                'method': 'phonetic_fallback',
+                "score": phon_value,
+                "type": phon_score.get("match_type", "phonetic") if phon_score else "phonetic",
+                "method": "phonetic_fallback",
             }
 
-        # Cas 4 : par défaut, on garde le score textuel
         return {
-            'score': text_score,
-            'type': main_score.get('match_type', 'text'),
-            'method': 'text_only',
+            "score": text_score, "type": main_score.get("match_type", "text"),
+            "method": "text_only",
         }

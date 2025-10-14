@@ -54,7 +54,7 @@ jobs:
         run: |
           # Cette commande listera les problèmes de style et de qualité.
           # Par défaut, Pylint échouera le job si le code n'atteint pas un certain score.
-          pylint --disable=line-too-long $(ls -d */ | grep -v 'venv\|tests') # Ajuster les dossiers à scanner si nécessaire
+          pylint $(ls -d */ | grep -v 'venv\|tests') # Ajuster les dossiers à scanner si nécessaire
 
       # --- Étape 4: Build, Scan de l'image (Trivy, maintenu) et Push ---
       # La suite du workflow de conteneur reste la même

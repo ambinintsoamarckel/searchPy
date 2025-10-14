@@ -97,6 +97,17 @@ class SearchService:
             options: SearchOptions,
             user_id: Optional[int] = None # Paramètre user_id ajouté
         ) -> SearchResponse:
+        """Effectue une recherche en utilisant un système de cache.
+
+        Args:
+            index_name: Nom de l'index sur lequel chercher.
+            qdata: Données de la requête (simple string ou QueryData).
+            options: Options de recherche (limite, filtres, etc.).
+            user_id: ID de l'utilisateur pour personnalisation.
+
+        Returns:
+            Un objet SearchResponse avec les résultats.
+        """
 
         # Création d'une clé de cache unique
         cache_key = f"search:{index_name}:{str(qdata)}:{str(options)}:{user_id}"
