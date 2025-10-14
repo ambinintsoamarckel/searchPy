@@ -171,6 +171,7 @@ class Settings(BaseSettings):
     # Performance
     PARALLEL_STRATEGIES: bool = True
     ENABLE_METRICS: bool = True
+    MAX_CPU_WORKERS: int = 2
 
     class Config:
         env_file = ".env"
