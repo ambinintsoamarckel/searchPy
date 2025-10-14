@@ -11,40 +11,54 @@ on:
 jobs:
   build-test-and-push:
     runs-on: ubuntu-latest
-    permissions: # Ajoutez ceci à votre job
-      actions: read
+    # Les permissions sont simplifiées car CodeQL et SonarCloud sont retirés
+    permissions:
       contents: read
-      security-events: write # ESSENTIEL pour CodeQL et le Code Scanning
+      actions: read
+
     steps:
-      # ... vos étapes ...
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # --- Étape 1: Analyse de sécurité du code source avec CodeQL ---
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: python
-
+      # --- Configuration Python et Dépendances ---
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install dependencies (including security/quality tools)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # Installation des dépendances du projet et des outils de qualité/sécurité
+          pip install -r requirements.txt pytest pytest-cov bandit pylint
 
-      - name: Run tests with pytest
-        run: pytest
+      # --- Étape 1: Tests Unitaires (Qualité) ---
+      - name: Run tests and generate coverage report
+        run: |
+          # Exécute les tests et génère un rapport de couverture pour information
+          pytest --cov=. --cov-report=term-missing
 
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+      # --- Étape 2: Analyse Statique de Sécurité (SAST) avec Bandit ---
+      # Bandit scanne le code source pour les vulnérabilités courantes
+      - name: Scan code for security issues with Bandit
+        run: |
+          # Le 'exit-code 0' (par défaut) signifie qu'il échoue la CI si des vulnérabilités de haut niveau sont trouvées.
+          # Vous pouvez ajuster 'high' et 'medium' selon vos besoins.
+          bandit -r . -ll -x tests/ # -ll = niveau de sévérité élevé et moyen, -x pour exclure le dossier des tests
 
-      # --- Étape 2: Build, Scan de l'image et Push ---
+      # --- Étape 3: Analyse de Qualité de Code avec Pylint ---
+      # Pylint vérifie la conformité au style (PEP8), la complexité et les bugs de style
+      - name: Lint code with Pylint (Quality Check)
+        run: |
+          # Cette commande listera les problèmes de style et de qualité.
+          # Par défaut, Pylint échouera le job si le code n'atteint pas un certain score.
+          pylint $(ls -d */ | grep -v 'venv\|tests') # Ajuster les dossiers à scanner si nécessaire
+
+      # --- Étape 4: Build, Scan de l'image (Trivy, maintenu) et Push ---
+      # La suite du workflow de conteneur reste la même
+
       - name: Generate Docker image version
         id: get_version
         run: |
@@ -91,7 +105,6 @@ jobs:
           severity: "CRITICAL,HIGH"
 
       - name: Push image to Docker Hub
-        # Ne pousse que sur la branche master, pas sur les pull requests
         if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
         run: |
           docker push ${{ secrets.DOCKER_USERNAME }}/searchpy:${{ env.IMAGE_VERSION }}
