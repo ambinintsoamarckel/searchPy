@@ -1,29 +1,49 @@
 import asyncio
 from typing import List, Dict, Any, Optional
-# On ne met pas 'import asyncpg' ici, car seul le Connector en a besoin.
-# from .config import settings # ❌ Retiré: le service n'a pas besoin de la config, seulement du Connector.
+import re
 
-# 💡 Nous supposons que PostgresConnector est importable pour l'annotation de type.
-# Si PostgresConnector est dans un chemin comme 'app.db.postgres_connector', vous devez l'importer.
-# Dans un environnement moderne, vous pouvez utiliser un string forward reference pour éviter la dépendance circulaire.
-# Pour la simplicité, supposons que PostgresConnector est importé (ou utilisez un commentaire).
-
-# from app.db.postgres_connector import PostgresConnector # Import requis si utilisé
-
-# Utilisé pour l'annotation de type si l'importation crée des problèmes de cycle.
 PostgresConnector = Any
 
 class RestoPastilleService:
     """Service d'enrichissement des données de restaurant avec les pastilles (isDeleted, Favori, Modifs)."""
 
     def __init__(self, db_connector: PostgresConnector):
-        # 💡 Injection de la dépendance du connecteur DB
         self.db = db_connector
+
+    def _validate_user_id(self, user_id: int) -> int:
+        """
+        Valide que user_id est un entier positif pour éviter les injections SQL.
+
+        Args:
+            user_id: L'ID utilisateur à valider
+
+        Returns:
+            int: L'ID validé
+
+        Raises:
+            ValueError: Si l'ID n'est pas valide
+        """
+        if not isinstance(user_id, int) or user_id <= 0:
+            raise ValueError(f"Invalid user_id: {user_id}")
+        return user_id
+
+    def _get_favori_table_name(self, user_id: int) -> str:
+        """
+        Construit le nom de la table favori de manière sécurisée.
+
+        Args:
+            user_id: L'ID utilisateur (doit être un entier positif)
+
+        Returns:
+            str: Le nom de la table favori
+        """
+        validated_id = self._validate_user_id(user_id)
+        return f'favori_etablisment_{validated_id}'
 
     async def append_resto_pastille(
         self,
         datas: List[Dict[str, Any]],
-        user_id: Optional[int] # L'ID de l'utilisateur est conservé
+        user_id: Optional[int]
     ) -> List[Dict[str, Any]]:
         """
         Enrichit les données de restaurant existantes (datas) avec les pastilles.
@@ -35,7 +55,6 @@ class RestoPastilleService:
         ids_set: Dict[int, bool] = {}
         for d in datas:
             if d.get('id') is not None:
-                # S'assurer que 'id' est un entier valide
                 try:
                     ids_set[int(d['id'])] = True
                 except (ValueError, TypeError):
@@ -47,7 +66,6 @@ class RestoPastilleService:
 
         # --- 2) Accès à la base de données en parallèle avec asyncio.gather ---
 
-        # Tâches pour les requêtes
         tasks = {
             "is_deleted": self.db.execute_query(
                 "SELECT id, is_deleted FROM bdd_resto WHERE id = ANY($1)", all_ids
@@ -59,14 +77,23 @@ class RestoPastilleService:
 
         # Ajout de la requête pour les favoris si user_id est fourni
         if user_id:
-            table_favori = f'favori_etablisment_{user_id}'
-            sql_favori = f"""
-                SELECT idRubrique
-                FROM {table_favori}
-                WHERE (rubriqueType = 'resto' OR rubriqueType = 'restaurant')
-                  AND idRubrique = ANY($1)
-            """
-            tasks["favoris"] = self.db.execute_query(sql_favori, all_ids)
+            try:
+                # ✅ Validation et construction sécurisée du nom de table
+                table_favori = self._get_favori_table_name(user_id)
+
+                # ✅ Utilisation de sql.Identifier si disponible avec asyncpg
+                # Sinon, le nom est maintenant validé et sûr
+                sql_favori = f"""
+                    SELECT idRubrique
+                    FROM {table_favori}
+                    WHERE (rubriqueType = 'resto' OR rubriqueType = 'restaurant')
+                      AND idRubrique = ANY($1)
+                """
+                tasks["favoris"] = self.db.execute_query(sql_favori, all_ids)
+            except ValueError as e:
+                # Si la validation échoue, on log et on continue sans favoris
+                print(f"Invalid user_id for favoris query: {e}")
+                tasks["favoris"] = asyncio.create_task(asyncio.sleep(0, result=[]))
 
         # Exécution des tâches en parallèle
         results = await asyncio.gather(*tasks.values())
@@ -110,7 +137,6 @@ class RestoPastilleService:
             data['isModified'] = is_modified
 
             # c) Favoris (hasFavori)
-            # True si user_id est présent ET l'ID resto est dans favori_map
             data['hasFavori'] = bool(user_id and favori_map.get(id_resto))
 
         return datas
