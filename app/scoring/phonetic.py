@@ -1,9 +1,11 @@
-# phonetic_scorer.py
+"""Module de scoring phonétique pour le matching avancé."""
 
 import re
 from typing import List, Dict, Any, Optional
 from app.scoring.distance import string_distance
-from app.models import QueryData # Pour l'annotation
+from app.models import QueryData
+
+
 class PhoneticScorer:
     """Scoreur phonétique pour le matching avancé."""
 
@@ -12,9 +14,11 @@ class PhoneticScorer:
         tokens = re.split(r'\s+', s.lower().strip())
         return [t for t in tokens if t and len(t) > 1]
 
-    def match_phonetic_tokens(self,
-                              query_tokens: List[str],
-                              hit_tokens: List[str], tolerant: bool = False) -> Dict[str, Any]:
+    def match_phonetic_tokens(
+            self,
+            query_tokens: List[str],
+            hit_tokens: List[str],
+            tolerant: bool = False) -> Dict[str, Any]:
         """Effectue le matching phonétique entre les tokens."""
         used = {}
         matches = 0
@@ -35,12 +39,19 @@ class PhoneticScorer:
 
                 # Préfixe (si assez long)
                 min_len = min(len(query_token), len(hit_token))
-                if min_len >= 4 and (query_token.startswith(hit_token) or hit_token.startswith(query_token)):
+                prefix_match = (
+                    query_token.startswith(hit_token) or
+                    hit_token.startswith(query_token)
+                )
+                if min_len >= 4 and prefix_match:
                     best_idx = idx
                     is_tolerant = False
                     continue
 
-                if tolerant and min_len >= 6 and string_distance.distance(query_token, hit_token, 1) <= 1:
+                distance_check = string_distance.distance(
+                    query_token, hit_token, 1
+                )
+                if tolerant and min_len >= 6 and distance_check <= 1:
                     best_idx = idx
                     is_tolerant = True
 
@@ -52,7 +63,10 @@ class PhoneticScorer:
 
         return {'found': matches, 'tolerant_used': tolerant_used}
 
-    def calculate_phonetic_score(self, hit: Dict[str, Any], query_data: QueryData) -> Optional[Dict[str, Any]]:
+    def calculate_phonetic_score(
+            self,
+            hit: Dict[str, Any],
+            query_data: QueryData) -> Optional[Dict[str, Any]]:
         """Calcule le score phonétique d'un hit."""
         q = query_data.soundex.strip()
         h = hit.get('name_soundex', '').strip()
@@ -67,7 +81,9 @@ class PhoneticScorer:
             return None
 
         # Essai strict d'abord
-        strict = self.match_phonetic_tokens(q_tokens, h_tokens, tolerant=False)
+        strict = self.match_phonetic_tokens(
+            q_tokens, h_tokens, tolerant=False
+        )
         ratio = strict['found'] / len(q_tokens)
         match_type = 'phonetic_strict'
 
@@ -82,7 +98,9 @@ class PhoneticScorer:
 
         # Mode tolérant si score faible
         if score < 6.0:
-            tolerant = self.match_phonetic_tokens(q_tokens, h_tokens, tolerant=True)
+            tolerant = self.match_phonetic_tokens(
+                q_tokens, h_tokens, tolerant=True
+            )
             ratio_tol = tolerant['found'] / len(q_tokens)
 
             if ratio_tol > ratio:

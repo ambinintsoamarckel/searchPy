@@ -15,16 +15,27 @@ from app.models import QueryData
 class SearchUtils:
     """Utilitaire de recherche avec scoring hybride textuel/phonétique."""
 
-    def __init__(self, max_distance: int = None, synonyms: Optional[Dict] = None):
+    def __init__(
+            self,
+            max_distance: int = None,
+            synonyms: Optional[Dict] = None):
         """Initialise SearchUtils avec les évaluateurs."""
-        self.max_distance = max_distance or settings.MAX_LEVENSHTEIN_DISTANCE
-        self.evaluator = FieldEvaluator(max_distance=self.max_distance, synonyms=synonyms)
+        self.max_distance = (
+            max_distance or settings.MAX_LEVENSHTEIN_DISTANCE
+        )
+        self.evaluator = FieldEvaluator(
+            max_distance=self.max_distance,
+            synonyms=synonyms
+        )
         self.phonetic_scorer = PhoneticScorer()
 
-    # ---------------------------------------------------------------------
-    # Évaluation complète d’un résultat
-    # ---------------------------------------------------------------------
-    def classify_result(self, hit: Dict[str, Any], query_data: QueryData) -> Dict[str, Any]:
+    # -----------------------------------------------------------------
+    # Évaluation complète d'un résultat
+    # -----------------------------------------------------------------
+    def classify_result(
+            self,
+            hit: Dict[str, Any],
+            query_data: QueryData) -> Dict[str, Any]:
         """
         Classifie un résultat en combinant score textuel et phonétique.
 
@@ -40,10 +51,14 @@ class SearchUtils:
         main_score = self.evaluator.calculate_main_score(hit, query_data)
 
         # --- Score phonétique
-        phon_score = self.phonetic_scorer.calculate_phonetic_score(hit, query_data)
+        phon_score = self.phonetic_scorer.calculate_phonetic_score(
+            hit, query_data
+        )
 
         # --- Score final hybride
-        final_score = self.evaluator.calculate_final_score(main_score, phon_score)
+        final_score = self.evaluator.calculate_final_score(
+            main_score, phon_score
+        )
 
         # Enrichissement du hit
         enriched = hit.copy()
@@ -52,7 +67,9 @@ class SearchUtils:
         enriched['_match_method'] = final_score['method']
 
         # Cap strict : seul exact_full peut atteindre 10.0
-        if enriched['_match_type'] != 'exact_full' and enriched['_score'] >= settings.EXACT_THRESHOLD:
+        is_not_exact = enriched['_match_type'] != 'exact_full'
+        is_high_score = enriched['_score'] >= settings.EXACT_THRESHOLD
+        if is_not_exact and is_high_score:
             enriched['_score'] = settings.EXACT_FULL_CAP
             enriched['_capped'] = True
 
@@ -64,10 +81,13 @@ class SearchUtils:
 
         return enriched
 
-    # ---------------------------------------------------------------------
+    # -----------------------------------------------------------------
     # Comparaison et tri
-    # ---------------------------------------------------------------------
-    def compare_penalty_indices(self, a: Dict[str, Any], b: Dict[str, Any]) -> int:
+    # -----------------------------------------------------------------
+    def compare_penalty_indices(
+            self,
+            a: Dict[str, Any],
+            b: Dict[str, Any]) -> int:
         """Compare les pénalités pour le tri fin."""
 
         # 1) Extras par longueur
@@ -91,7 +111,10 @@ class SearchUtils:
             return 1
         return 0
 
-    def compare_results(self, a: Dict[str, Any], b: Dict[str, Any]) -> int:
+    def compare_results(
+            self,
+            a: Dict[str, Any],
+            b: Dict[str, Any]) -> int:
         """Compare deux résultats pour le tri."""
 
         # 1) Score (descendant)
@@ -107,8 +130,14 @@ class SearchUtils:
             return -1 if priority_a < priority_b else 1
 
         # 3) Pénalités fines
-        if '_penalty_indices' in a and '_penalty_indices' in b:
-            pen_cmp = self.compare_penalty_indices(a['_penalty_indices'], b['_penalty_indices'])
+        has_penalties = (
+            '_penalty_indices' in a and '_penalty_indices' in b
+        )
+        if has_penalties:
+            pen_cmp = self.compare_penalty_indices(
+                a['_penalty_indices'],
+                b['_penalty_indices']
+            )
             if pen_cmp != 0:
                 return pen_cmp
 
@@ -122,46 +151,54 @@ class SearchUtils:
 
         return 0
 
-    def sort_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def sort_results(
+            self,
+            results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Trie les résultats selon la logique de comparaison."""
         return sorted(results, key=cmp_to_key(self.compare_results))
 
-    # ---------------------------------------------------------------------
+    # -----------------------------------------------------------------
     # Déduplication et pipeline de traitement
-    # ---------------------------------------------------------------------
-    def deduplicate_results(self, all_results: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    # -----------------------------------------------------------------
+    def deduplicate_results(
+            self,
+            all_results: Dict[str, Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """
-        Déduplique les résultats par ID en préservant la priorité des stratégies.
+        Déduplique les résultats par ID.
+
+        Préserve la priorité des stratégies.
 
         Args:
-            all_results: Dict avec clés 'name_search', 'no_space', 'standard', 'phonetic'.
-                         Chaque valeur est le dictionnaire de résultat complet de Meilisearch.
+            all_results: Dict avec clés 'name_search', 'no_space',
+                         'standard', 'phonetic'. Chaque valeur est le
+                         dictionnaire de résultat complet de Meilisearch.
 
         Returns:
             Liste unique de hits avec _discovery_strategy
         """
         unique = []
         seen = set()
-        priority_order = ['name_search', 'no_space', 'standard', 'phonetic']
+        priority_order = [
+            'name_search', 'no_space', 'standard', 'phonetic'
+        ]
 
         for strategy in priority_order:
             if strategy not in all_results:
                 continue
 
-            # --- CORRECTION ICI ---
-            # all_results[strategy] est maintenant le dictionnaire de résultat complet Meilisearch
-            # On utilise .get('hits', []) pour obtenir la liste des documents (hits)
+            # all_results[strategy] est le dict complet Meilisearch
+            # On utilise .get('hits', []) pour obtenir les documents
             strategy_results = all_results[strategy].get('hits', [])
 
             for hit in strategy_results:
-            # for hit in all_results[strategy]: # <-- L'ancienne ligne itérait sur le Dictionnaire, causant des erreurs.
-            # ----------------------
-
                 hit_id = hit.get('id') or hit.get('id_etab')
 
                 # Fallback : fingerprint sur le nom
                 if hit_id is None:
-                    hit_id = (hit.get('name') or hit.get('nom') or '')[:200]
+                    hit_id = (
+                        hit.get('name') or hit.get('nom') or ''
+                    )[:200]
 
                 if hit_id not in seen:
                     hit['_discovery_strategy'] = strategy
@@ -169,6 +206,7 @@ class SearchUtils:
                     seen.add(hit_id)
 
         return unique
+
     def process_results(
         self,
         all_results: Dict[str, List[Dict[str, Any]]],
@@ -203,11 +241,16 @@ class SearchUtils:
         sorted_results = self.sort_results(enriched)
 
         # 4) Détection des résultats exacts
-        exact_results = [h for h in sorted_results if h.get('_score', 0) >= settings.EXACT_THRESHOLD]
+        exact_results = [
+            h for h in sorted_results
+            if h.get('_score', 0) >= settings.EXACT_THRESHOLD
+        ]
         has_exact_results = len(exact_results) > 0
 
-        # Si exacts trouvés → ne garder qu’eux
-        final_hits = exact_results if has_exact_results else sorted_results
+        # Si exacts trouvés → ne garder qu'eux
+        final_hits = (
+            exact_results if has_exact_results else sorted_results
+        )
 
         # 5) Limitation
         final_hits = final_hits[:limit]
@@ -223,9 +266,9 @@ class SearchUtils:
             'query_time_ms': round((end_time - start_time) * 1000, 2),
         }
 
-    # ---------------------------------------------------------------------
+    # -----------------------------------------------------------------
     # Synonymes
-    # ---------------------------------------------------------------------
+    # -----------------------------------------------------------------
     def set_synonyms(self, synonyms: Dict[str, List[str]]) -> None:
         """Met à jour les synonymes de l'évaluateur."""
         self.evaluator.synonyms = synonyms or {}
