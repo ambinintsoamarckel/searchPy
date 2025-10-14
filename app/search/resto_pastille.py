@@ -83,12 +83,7 @@ class RestoPastilleService:
 
                 # Safe: user_id is validated as positive integer in _validate_user_id()
                 # Table name is constructed from validated integer only, no user input
-                sql_favori = f"""  # nosec B608
-                    SELECT idRubrique
-                    FROM {table_favori}
-                    WHERE (rubriqueType = 'resto' OR rubriqueType = 'restaurant')
-                      AND idRubrique = ANY($1)
-                """
+                sql_favori = f"SELECT idRubrique FROM {table_favori} WHERE (rubriqueType = 'resto' OR rubriqueType = 'restaurant') AND idRubrique = ANY($1)"  # nosec B608
                 tasks["favoris"] = self.db.execute_query(sql_favori, all_ids)
             except ValueError as e:
                 # Si la validation échoue, on log et on continue sans favoris
