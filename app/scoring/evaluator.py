@@ -1,5 +1,5 @@
 """Évaluation et scoring des champs."""
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Any, Optional
 from app.config import settings
 from app.scoring.distance import string_distance
 from app.models import QueryData
@@ -186,7 +186,9 @@ class FieldEvaluator:
             }
         }
 
-    def calculate_main_score(self, hit: Dict[str, Any], query_data: QueryData) -> Dict[str, Any]:
+    def calculate_main_score(self,
+                            hit: Dict[str, Any],
+                            query_data: QueryData) -> Dict[str, Any]:
         """
         Calcule le score principal (name_search vs no_space).
 
@@ -290,7 +292,7 @@ class FieldEvaluator:
 
         # Bonus sur name
         eval_name = self.evaluate_field(query_original_words, name_words, query_data.original)
-        bonus = self.calculate_name_bonus(eval_name, query_original_words, query_data.original)
+        bonus = self.calculate_name_bonus(eval_name, query_original_words)
 
         total_score = min(12.0, base_score + bonus)
 
@@ -364,7 +366,6 @@ class FieldEvaluator:
         self,
         eval_name: Dict[str, Any],
         query_words: List[str],
-        query_text: str
     ) -> float:
         """Calcule le bonus progressif sur le champ name."""
         query_word_count = len(query_words)

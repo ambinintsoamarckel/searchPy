@@ -5,6 +5,7 @@ Intègre le scoring textuel, phonétique et la logique de classement.
 
 import time
 from typing import List, Dict, Any, Optional
+from functools import cmp_to_key
 from app.config import settings
 from app.scoring.evaluator import FieldEvaluator
 from app.scoring.phonetic import PhoneticScorer
@@ -86,7 +87,7 @@ class SearchUtils:
         dist_b = b.get('distance_moyenne', 0.0)
         if dist_a < dist_b:
             return -1
-        elif dist_a > dist_b:
+        if dist_a > dist_b:
             return 1
         return 0
 
@@ -116,14 +117,13 @@ class SearchUtils:
         id_b = b.get('id') or b.get('id_etab', '')
         if id_a < id_b:
             return -1
-        elif id_a > id_b:
+        if id_a > id_b:
             return 1
 
         return 0
 
     def sort_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Trie les résultats selon la logique de comparaison."""
-        from functools import cmp_to_key
         return sorted(results, key=cmp_to_key(self.compare_results))
 
     # ---------------------------------------------------------------------

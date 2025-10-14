@@ -12,7 +12,9 @@ class PhoneticScorer:
         tokens = re.split(r'\s+', s.lower().strip())
         return [t for t in tokens if t and len(t) > 1]
 
-    def match_phonetic_tokens(self, query_tokens: List[str], hit_tokens: List[str], tolerant: bool = False) -> Dict[str, Any]:
+    def match_phonetic_tokens(self,
+                              query_tokens: List[str],
+                              hit_tokens: List[str], tolerant: bool = False) -> Dict[str, Any]:
         """Effectue le matching phonétique entre les tokens."""
         used = {}
         matches = 0
