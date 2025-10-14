@@ -1,7 +1,6 @@
+"""PostgreSQL database connector."""
 from typing import List, Dict, Any, Optional
 import asyncpg
-# Importer votre classe Settings
-from ..config import settings # Assurez-vous que le chemin vers votre Settings est correct
 
 class PostgresConnector:
     """Gère un pool de connexions asynchrone à PostgreSQL en utilisant l'URL."""
@@ -27,7 +26,7 @@ class PostgresConnector:
     async def execute_query(self, sql: str, *args) -> List[Dict[str, Any]]:
         """Exécute une requête SQL avec des paramètres variables."""
         if not self._pool:
-            raise Exception("Le pool de connexions n'est pas initialisé. Appelez .connect() d'abord.")
+            raise ConnectionError("Connection pool not initialized. Call .connect() first.")
 
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(sql, *args)
@@ -36,17 +35,16 @@ class PostgresConnector:
     async def is_table_exist(self, table_name: str) -> bool:
         """Vérifie l'existence de la table."""
         sql = """SELECT EXISTS (SELECT 1 FROM pg_tables WHERE tablename = $1)"""
-        if not self._pool: return False
+        if not self._pool:
+            return False
         async with self._pool.acquire() as conn:
             return await conn.fetchval(sql, table_name.lower())
 
     async def create_favori_table(self, user_id: int):
         """Crée les tables de favoris si elles n'existent pas."""
         print(f"Tentative de création des tables de favoris pour l'utilisateur {user_id}.")
-        pass
 
     async def close(self):
         """Ferme le pool de connexions proprement."""
         if self._pool:
             await self._pool.close()
-

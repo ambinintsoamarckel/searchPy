@@ -1,5 +1,4 @@
 """Évaluation et scoring des champs."""
-import re
 from typing import Dict, List, Tuple, Any, Optional
 from app.config import settings
 from app.scoring.distance import string_distance
@@ -9,7 +8,9 @@ from app.models import QueryData
 class FieldEvaluator:
     """Évaluateur de champs pour le scoring."""
 
-    def __init__(self, max_distance: int = settings.MAX_LEVENSHTEIN_DISTANCE, synonyms: Optional[Dict] = None):
+    def __init__(self,
+                max_distance: int = settings.MAX_LEVENSHTEIN_DISTANCE,
+                synonyms: Optional[Dict] = None):
         self.max_distance = max_distance
 
         # 1. Stocker le dictionnaire original (optionnel)
@@ -47,7 +48,7 @@ class FieldEvaluator:
 
              # Le mot "base1" existe nécessairement dans le lookup,
              # car la base est ajoutée dans _build_synonym_lookup.
-             return word2
+            return word2
 
         return None
     def calculate_word_match(self, query_word: str, candidate_word: str) -> Dict[str, Any]:
@@ -244,7 +245,9 @@ class FieldEvaluator:
             name_search_score_adj = max(0.0, name_search_score - penalty_search)
 
         # Évaluation no_space
-        eval_no_space = self.evaluate_field(query_no_space_words, name_no_space_words, query_data.no_space)
+        eval_no_space = self.evaluate_field(query_no_space_words,
+                                             name_no_space_words,
+                                               query_data.no_space)
         p_no_space = eval_no_space['penalties']
 
         if eval_no_space['found_count'] == 0:

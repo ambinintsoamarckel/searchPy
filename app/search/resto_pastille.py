@@ -1,6 +1,5 @@
 import asyncio
 from typing import List, Dict, Any, Optional
-import re
 
 PostgresConnector = Any
 

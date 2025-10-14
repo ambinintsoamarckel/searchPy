@@ -1,9 +1,9 @@
 """Configuration du microservice de recherche."""
-from pydantic_settings import BaseSettings
 from typing import Dict
+from pydantic_settings import BaseSettings
 
 
-class Settings(BaseSettings):
+class Settings(BaseSettings): # pylint: disable=too-few-public-methods
     """Configuration de l'application."""
 
     # ➡️ PostgreSQL Configuration
@@ -97,7 +97,10 @@ class Settings(BaseSettings):
             'gascon' : ['gascogne','cassoulet','confit'],
 
 
-            'mcdonalds' : ['mcdonald\'s','mcdo','macdo','ronald','mcdonald','macdonalds','macdonald\'s','macdonald'],
+            'mcdonalds': [
+                'mcdonald\'s', 'mcdo', 'macdo', 'ronald', 'mcdonald',
+                'macdonalds', 'macdonald\'s', 'macdonald'
+            ],
             'kfc' : ['kentucky','poulet frit'],
             'quick' : ['burger king'],
             'subway' : ['sub','sandwich'],
@@ -173,7 +176,8 @@ class Settings(BaseSettings):
     ENABLE_METRICS: bool = True
     MAX_CPU_WORKERS: int = 2
 
-    class Config:
+    class Config: # pylint: disable=too-few-public-methods
+        """Pydantic configuration class."""
         env_file = ".env"
         case_sensitive = True
         extra = "ignore"

@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any,Union
 from pydantic import BaseModel, Field
 from app.config import settings
 
-class QueryData(BaseModel):
+class QueryData(BaseModel): # pylint: disable=too-few-public-methods
     """Données de la query préprocessée."""
     original: str
     cleaned: str
@@ -17,7 +17,8 @@ class QueryData(BaseModel):
     wordsNoSpace: List[str]
 
 
-class SearchOptions(BaseModel):
+class SearchOptions(BaseModel): # pylint: disable=too-few-public-methods
+    """Options for a search query."""
     limit: int = 10
     offset: int = 0  # Ajout ou confirmation
     # Le tri pour Meilisearch est une liste de chaînes: ["field:order"]
@@ -28,7 +29,7 @@ class SearchOptions(BaseModel):
     # ... autres options ...
 
 
-class SearchRequest(BaseModel):
+class SearchRequest(BaseModel): # pylint: disable=too-few-public-methods
     """Requête de recherche."""
     index_name: str
     query_data: Optional[Union[str,  QueryData]] = None
@@ -36,43 +37,8 @@ class SearchRequest(BaseModel):
     options: SearchOptions = Field(default_factory=SearchOptions)
 
 
-class MatchDetails(BaseModel):
-    """Détails d'un match."""
-    found: List[Dict[str, Any]]
-    not_found: List[str]
-    total_distance: float
-    average_distance: float
-    extra_length: int
-    extra_length_ratio: float
 
-
-class ScoredHit(BaseModel):
-    """Hit avec score calculé."""
-    # Données du hit original (flexible)
-    id: Optional[Any] = None
-    id_etab: Optional[Any] = None
-    name: Optional[str] = None
-    nom: Optional[str] = None
-
-    # Scoring
-    _score: float
-    _match_type: str
-    _match_priority: int
-    _discovery_strategy: str
-
-    # Détails optionnels
-    _penalty_indices: Optional[Dict[str, float]] = None
-    name_search_score: Optional[float] = None
-    no_space_score: Optional[float] = None
-    base_score: Optional[float] = None
-    name_score: Optional[float] = None
-    winning_strategy: Optional[str] = None
-
-    class Config:
-        extra = "allow"  # Permet des champs supplémentaires
-
-
-class SearchResponse(BaseModel):
+class SearchResponse(BaseModel): # pylint: disable=too-few-public-methods
     """Réponse de recherche."""
     hits: List[Dict[str, Any]]
     total: int
@@ -84,5 +50,6 @@ class SearchResponse(BaseModel):
     memory_used_mb: Optional[float] = None
     count_per_dep: Dict[str, int] = Field(default_factory=dict)
 
-    class Config:
+    class Config: # pylint: disable=too-few-public-methods
+        """Pydantic configuration."""
         extra = "allow"

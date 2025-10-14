@@ -1,19 +1,19 @@
+"""Module contenant le service de recherche principal."""
 # app/search/search_service.py
 import asyncio
+import logging
 import time
+from typing import Any, Dict, List, Optional, Union
+
 import psutil
-from typing import List, Dict, Any, Optional, Union
 from meilisearch_python_sdk import AsyncClient as MeiliClient
+
 from app.cache import cache_manager
-import json
-
-# 💡 Importez la classe correcte (RestoPastilleService est maintenant dans .resto_pastille_service)
-from app.search.resto_pastille import RestoPastilleService
-
 from app.config import settings
 from app.models import QueryData, SearchOptions, SearchResponse
+# 💡 Importez la classe correcte (RestoPastilleService est maintenant dans .resto_pastille_service)
+from app.search.resto_pastille import RestoPastilleService
 from app.search.search_utils import SearchUtils
-import logging
 
 logger = logging.getLogger("search-api")
 
@@ -57,8 +57,6 @@ class SearchService:
         self, index_name: str, qdata: QueryData, options: SearchOptions
     ) -> Dict[str, List[Dict[str, Any]]]:
         # ... (Logique inchangée, elle est correcte) ...
-        limit = options.limit
-        filters = options.filters
 
         strategies = {
             'name_search': (qdata.cleaned or qdata.original, ['name_search']),
@@ -77,6 +75,7 @@ class SearchService:
 
 
     def _calculate_count_per_dep(self, hits: List[Dict[str, Any]]) -> Dict[str, int]:
+        """Calcule le nombre de résultats par département."""
         # ... (Logique inchangée, elle est correcte) ...
         count_per_dep: Dict[str, int] = {}
         for item in hits:
@@ -101,15 +100,15 @@ class SearchService:
 
         # Création d'une clé de cache unique
         cache_key = f"search:{index_name}:{str(qdata)}:{str(options)}:{user_id}"
-        
+
         # 1. Essayer de récupérer depuis le cache
         cached_result = await self.cache.get(cache_key)
         if cached_result:
-            logger.info(f"Cache HIT for key: {cache_key}")
+            logger.info("Cache HIT for key: %s", cache_key)
             # Désérialiser la réponse et la retourner
             return SearchResponse.parse_raw(cached_result)
 
-        logger.info(f"Cache MISS for key: {cache_key}")
+        logger.info("Cache MISS for key: %s", cache_key)
         # 2. Si pas dans le cache, exécuter la recherche
         response = await self._execute_search(index_name, qdata, options, user_id)
 
@@ -147,7 +146,7 @@ class SearchService:
 
             # 🚀 ENRICHISSEMENT DES RESTOS (CAS SIMPLE)
             if is_resto_index and user_id is not None:
-                logger.debug(f"Enrichissement des {len(hits)} restos pour l'utilisateur {user_id}")
+                logger.debug("Enrichissement des %s restos pour l'utilisateur %s", len(hits), user_id)
                 # 💡 CORRECTION : Utilisation de l'instance injectée
                 hits = await self.resto_pastille_service.append_resto_pastille(
                     datas=hits,
@@ -160,8 +159,8 @@ class SearchService:
             total_duration_sec = t1 - t0
             memory_used_mb = psutil.Process().memory_info().rss / 1024 / 1024
             logger.info(
-                f"Recherche simple (index: {index_name}, query: '{query_text}') : "
-                f"Durée = {total_duration_sec:.4f}s | RAM = {memory_used_mb:.2f} Mo"
+                "Recherche simple (index: %s, query: '%s') : Durée = %.4fs | RAM = %.2f Mo",
+                index_name, query_text, total_duration_sec, memory_used_mb
             )
 
             return SearchResponse(
@@ -187,7 +186,7 @@ class SearchService:
 
         # 🚀 ENRICHISSEMENT DES RESTOS (CAS AVANCÉ)
         if is_resto_index:
-            logger.debug(f"Enrichissement des {len(processed['hits'])} restos pour l'utilisateur {user_id}")
+            logger.debug("Enrichissement des %s restos pour l'utilisateur %s", len(processed['hits']), user_id)
             # 💡 CORRECTION : Utilisation de l'instance injectée
             processed['hits'] = await self.resto_pastille_service.append_resto_pastille(
                 datas=processed['hits'],
@@ -203,8 +202,8 @@ class SearchService:
         total_duration_sec = t1 - t0
         memory_used_mb = psutil.Process().memory_info().rss / 1024 / 1024
         logger.info(
-            f"Recherche avancée (index: {index_name}, query: {qdata.original}) : "
-            f"Durée = {total_duration_sec:.4f}s | RAM = {memory_used_mb:.2f} Mo"
+            "Recherche avancée (index: %s, query: %s) : Durée = %.4fs | RAM = %.2f Mo",
+            index_name, qdata.original, total_duration_sec, memory_used_mb
         )
 
         return SearchResponse(

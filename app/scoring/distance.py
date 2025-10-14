@@ -1,7 +1,7 @@
 """Calcul de distance Levenshtein optimisé."""
-import Levenshtein as lev
-from typing import Optional
 from functools import lru_cache
+from typing import Optional
+import Levenshtein as lev
 
 
 class StringDistance:
@@ -45,12 +45,11 @@ class StringDistance:
 
         if length <= 3:
             return 1
-        elif length <= 6:
+        if length <= 6:
             return 2
-        elif length <= 10:
+        if length <= 10:
             return 3
-        else:
-            return 4
+        return 4
 
 
 # Instance globale réutilisable

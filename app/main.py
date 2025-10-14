@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException
-from contextlib import asynccontextmanager
+"""Main module for the FastAPI application."""
+import os
 import logging
 from logging.handlers import RotatingFileHandler
-from typing import List
-import os
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 # Importez vos configurations et services
 # Assurez-vous d'avoir les imports corrects pour ces modules :
@@ -13,6 +15,7 @@ from .search.search_service import SearchService
 from .search.resto_pastille import RestoPastilleService
 from .db.postgres_connector import PostgresConnector # 👈 Votre nouveau connecteur
 from .cache import cache_manager # 👈 Votre nouveau manager de cache
+
 
 # --- Initialisation des variables globales ---
 
@@ -35,9 +38,9 @@ service = search_service
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # Créer le répertoire de logs s'il n'existe pas
-log_dir = 'logs'
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, 'search-api.log')
+LOG_DIR = 'logs'
+os.makedirs(LOG_DIR, exist_ok=True)
+log_file = os.path.join(LOG_DIR, 'search-api.log')
 
 file_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024 * 5, backupCount=5)
 file_handler.setFormatter(log_formatter)
@@ -49,7 +52,8 @@ logger.propagate = False
 # ---------------------------------------------------------------------------------------
 ## 2. Gestion des événements de cycle de vie (Startup/Shutdown)
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
+    """Handle FastAPI startup and shutdown events."""
     # 🚀 DÉMARRAGE DE L'APPLICATION
     logger.info("Starting up SearchPy API...")
 
@@ -57,16 +61,16 @@ async def lifespan(app: FastAPI):
     try:
         await db_connector.connect()
         logger.info("PostgreSQL connection pool established successfully.")
-    except Exception as e:
-        logger.error(f"Failed to connect to PostgreSQL: {e}")
+    except ConnectionError as e:
+        logger.error("Failed to connect to PostgreSQL: %s", e)
         # Vous pourriez choisir d'arrêter l'application ici
 
     # 2. Initialisation du cache
     try:
         await cache_manager.redis.ping()
         logger.info("Redis cache connected successfully.")
-    except Exception as e:
-        logger.error(f"Failed to connect to Redis: {e}")
+    except RedisConnectionError as e:
+        logger.error("Failed to connect to Redis: %s", e)
 
     yield # L'application commence à traiter les requêtes
 
@@ -97,12 +101,7 @@ async def search(req: SearchRequest):
     (ex: headers, token JWT) et n'est pas directement dans SearchRequest.
     """
     try:
-        logger.info(f"Received request: {req.json()}")
-
-        # 💡 Extraction de l'ID utilisateur (Exemple hypothétique)
-        # user_id = get_user_id_from_auth_header(req) # Utilisez votre propre fonction
-        # Pour l'exemple, nous allons le simuler pour éviter les erreurs d'imports
-        user_id = 42 # Remplacez ceci par la logique d'extraction réelle
+        logger.info("Received request: %s", req.json())
 
         resp = await service.search(
             index_name=req.index_name,
@@ -114,8 +113,9 @@ async def search(req: SearchRequest):
     except Exception as e:
         logger.exception("Error processing search request")
         # Log l'exception pour le débogage
-        raise HTTPException(status_code=500, detail={"error": str(e)})
+        raise HTTPException(status_code=500, detail={"error": str(e)}) from e
 
 @app.get("/")
 def root():
+    """Root endpoint to check API status."""
     return {"status": "ok", "message": "SearchPy API is running 🚀"}
