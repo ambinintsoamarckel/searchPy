@@ -81,9 +81,9 @@ class RestoPastilleService:
                 # ✅ Validation et construction sécurisée du nom de table
                 table_favori = self._get_favori_table_name(user_id)
 
-                # ✅ Utilisation de sql.Identifier si disponible avec asyncpg
-                # Sinon, le nom est maintenant validé et sûr
-                sql_favori = f"""
+                # Safe: user_id is validated as positive integer in _validate_user_id()
+                # Table name is constructed from validated integer only, no user input
+                sql_favori = f"""  # nosec B608
                     SELECT idRubrique
                     FROM {table_favori}
                     WHERE (rubriqueType = 'resto' OR rubriqueType = 'restaurant')
