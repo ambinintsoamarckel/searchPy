@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 import logging
 from logging.handlers import RotatingFileHandler
 from typing import List
+import os
 
 # Importez vos configurations et services
 # Assurez-vous d'avoir les imports corrects pour ces modules :
@@ -32,7 +33,12 @@ service = search_service
 
 # --- Configuration et Loggers (inchangée) ---
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-log_file = 'logs/search-api.log'
+
+# Créer le répertoire de logs s'il n'existe pas
+log_dir = 'logs'
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, 'search-api.log')
+
 file_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024 * 5, backupCount=5)
 file_handler.setFormatter(log_formatter)
 logger = logging.getLogger("search-api")
