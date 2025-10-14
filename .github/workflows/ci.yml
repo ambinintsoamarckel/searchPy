@@ -1,10 +1,12 @@
-name: CI/CD Pipeline for SearchPy
+name: CI/CD and Security Scan Pipeline
 
 on:
   push:
     branches: [ master ]
     tags:
       - 'v*.*.*'
+  pull_request:
+    branches: [ master ]
 
 jobs:
   build-test-and-push:
@@ -14,7 +16,13 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0 # Nécessaire pour récupérer tous les tags et l'historique
+        fetch-depth: 0
+
+    # --- Étape 1: Analyse de sécurité du code source avec CodeQL ---
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: python
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -29,19 +37,18 @@ jobs:
     - name: Run tests with pytest
       run: pytest
 
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+
+    # --- Étape 2: Build, Scan de l'image et Push ---
     - name: Generate Docker image version
       id: get_version
       run: |
-        # Si c'est un tag, on prend la version du tag (ex: v1.2.3 -> 1.2.3)
         if [[ $GITHUB_REF == refs/tags/v* ]]; then
           VERSION=${GITHUB_REF#refs/tags/v}
-        # Si c'est un commit sur master, on crée une version de dev
         else
-          # Récupère la description (ex: v1.2.3-5-gabcdef)
           GIT_DESC=$(git describe --tags --always --long)
-          # Extrait le dernier tag (v1.2.3)
           LAST_TAG=$(echo $GIT_DESC | awk -F- '{print $1}' | sed 's/^v//')
-          # Extrait le nombre de commits depuis le tag (5)
           COMMITS_AHEAD=$(echo $GIT_DESC | awk -F- '{print $2}')
           VERSION="$LAST_TAG-dev.$COMMITS_AHEAD"
         fi
@@ -63,8 +70,8 @@ jobs:
       with:
         context: .
         file: ./Dockerfile.prod
-        push: false # Ne pas pusher l'image, seulement la construire localement
-        load: true  # Charger l'image dans le daemon Docker local
+        push: false
+        load: true
         tags: |
           ${{ secrets.DOCKER_USERNAME }}/searchpy:${{ env.IMAGE_VERSION }}
           ${{ secrets.DOCKER_USERNAME }}/searchpy:latest
@@ -80,6 +87,8 @@ jobs:
         severity: 'CRITICAL,HIGH'
 
     - name: Push image to Docker Hub
+      # Ne pousse que sur la branche master, pas sur les pull requests
+      if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
       run: |
         docker push ${{ secrets.DOCKER_USERNAME }}/searchpy:${{ env.IMAGE_VERSION }}
         docker push ${{ secrets.DOCKER_USERNAME }}/searchpy:latest
