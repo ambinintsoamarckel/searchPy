@@ -2,93 +2,97 @@ name: CI/CD and Security Scan Pipeline
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   build-test-and-push:
     runs-on: ubuntu-latest
-
+    permissions: # Ajoutez ceci à votre job
+      actions: read
+      contents: read
+      security-events: write # ESSENTIEL pour CodeQL et le Code Scanning
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      # ... vos étapes ...
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    # --- Étape 1: Analyse de sécurité du code source avec CodeQL ---
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: python
+      # --- Étape 1: Analyse de sécurité du code source avec CodeQL ---
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-    - name: Run tests with pytest
-      run: pytest
+      - name: Run tests with pytest
+        run: pytest
 
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
 
-    # --- Étape 2: Build, Scan de l'image et Push ---
-    - name: Generate Docker image version
-      id: get_version
-      run: |
-        if [[ $GITHUB_REF == refs/tags/v* ]]; then
-          VERSION=${GITHUB_REF#refs/tags/v}
-        else
-          GIT_DESC=$(git describe --tags --always --long)
-          LAST_TAG=$(echo $GIT_DESC | awk -F- '{print $1}' | sed 's/^v//')
-          COMMITS_AHEAD=$(echo $GIT_DESC | awk -F- '{print $2}')
-          VERSION="$LAST_TAG-dev.$COMMITS_AHEAD"
-        fi
-        echo "IMAGE_VERSION=$VERSION" >> $GITHUB_ENV
-        echo "Generated version: $VERSION"
+      # --- Étape 2: Build, Scan de l'image et Push ---
+      - name: Generate Docker image version
+        id: get_version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            GIT_DESC=$(git describe --tags --always --long)
+            LAST_TAG=$(echo $GIT_DESC | awk -F- '{print $1}' | sed 's/^v//')
+            COMMITS_AHEAD=$(echo $GIT_DESC | awk -F- '{print $2}')
+            VERSION="$LAST_TAG-dev.$COMMITS_AHEAD"
+          fi
+          echo "IMAGE_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Generated version: $VERSION"
 
-    - name: Login to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Build and load local Docker image
-      id: build-image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile.prod
-        push: false
-        load: true
-        tags: |
-          ${{ secrets.DOCKER_USERNAME }}/searchpy:${{ env.IMAGE_VERSION }}
-          ${{ secrets.DOCKER_USERNAME }}/searchpy:latest
+      - name: Build and load local Docker image
+        id: build-image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.prod
+          push: false
+          load: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/searchpy:${{ env.IMAGE_VERSION }}
+            ${{ secrets.DOCKER_USERNAME }}/searchpy:latest
 
-    - name: Scan image for vulnerabilities with Trivy
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: '${{ secrets.DOCKER_USERNAME }}/searchpy:${{ env.IMAGE_VERSION }}'
-        format: 'table'
-        exit-code: '1'
-        ignore-unfixed: true
-        vuln-type: 'os,library'
-        severity: 'CRITICAL,HIGH'
+      - name: Scan image for vulnerabilities with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ secrets.DOCKER_USERNAME }}/searchpy:${{ env.IMAGE_VERSION }}"
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH"
 
-    - name: Push image to Docker Hub
-      # Ne pousse que sur la branche master, pas sur les pull requests
-      if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
-      run: |
-        docker push ${{ secrets.DOCKER_USERNAME }}/searchpy:${{ env.IMAGE_VERSION }}
-        docker push ${{ secrets.DOCKER_USERNAME }}/searchpy:latest
+      - name: Push image to Docker Hub
+        # Ne pousse que sur la branche master, pas sur les pull requests
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/searchpy:${{ env.IMAGE_VERSION }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/searchpy:latest
