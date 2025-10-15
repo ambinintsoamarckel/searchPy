@@ -182,7 +182,7 @@ class SearchService:
         hits = result.get('hits', [])
         estimated_total = result.get('estimated_total_hits', 0)
 
-        if ctx.is_resto_index and ctx.user_id is not None:
+        if ctx.is_resto_index :
             logger.debug(
                 "Enrichissement des %s restos pour l'utilisateur %s",
                 len(hits), ctx.user_id
@@ -227,7 +227,7 @@ class SearchService:
             all_results, qdata, limit=ctx.options.limit
         )
 
-        if ctx.is_resto_index and ctx.user_id is not None:
+        if ctx.is_resto_index :
             logger.debug(
                 "Enrichissement des %s restos pour l'utilisateur %s",
                 len(processed['hits']), ctx.user_id
