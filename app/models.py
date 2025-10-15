@@ -19,8 +19,11 @@ class QueryData(BaseModel): # pylint: disable=too-few-public-methods
 
 class SearchOptions(BaseModel): # pylint: disable=too-few-public-methods
     """Options for a search query."""
-    limit: int = 10
-    offset: int = 0  # Ajout ou confirmation
+    # Limite de récupération des candidats depuis Meilisearch (surtout pour la recherche avancée)
+    limit: int = 200
+    # Nombre de résultats par page pour la pagination finale
+    per_page: int = 10
+    offset: int = 0
     # Le tri pour Meilisearch est une liste de chaînes: ["field:order"]
     sort: Optional[List[str]] = None
     # Le champ filters est déjà pris en compte
@@ -41,7 +44,7 @@ class SearchRequest(BaseModel): # pylint: disable=too-few-public-methods
 class SearchResponse(BaseModel): # pylint: disable=too-few-public-methods
     """Réponse de recherche."""
     hits: List[Dict[str, Any]]
-    total: int
+    total: int # Représente le nombre total de résultats avant pagination
     has_exact_results: bool
     exact_count: int
     total_before_filter: int

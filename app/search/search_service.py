@@ -115,24 +115,58 @@ class SearchService:
         Returns:
             Un objet SearchResponse avec les résultats.
         """
-        cache_key = (
-            f"search:{index_name}:{str(qdata)}:{str(options)}:{user_id}"
-        )
+        is_advanced = isinstance(qdata, QueryData)
+
+        # Pour la recherche avancée, la clé de cache ignore la pagination (limit/offset)
+        # car nous mettons en cache l'ensemble des résultats avant de paginer.
+        if is_advanced:
+            # La clé de cache dépend de `limit` (fetch) mais pas de `per_page` ou `offset` (pagination)
+            cache_options = options.copy(deep=True)
+            cache_options.per_page = -1 # Marqueur pour ignorer la pagination
+            cache_options.offset = 0
+            cache_key = f"search:{index_name}:{str(qdata)}:{str(cache_options)}:{user_id}"
+        else:
+            # Pour la recherche simple, la pagination fait partie de la clé
+            cache_key = f"search:{index_name}:{str(qdata)}:{str(options)}:{user_id}"
 
         cached_result = await self.cache.get(cache_key)
         if cached_result:
             logger.info("Cache HIT for key: %s", cache_key)
-            return SearchResponse.parse_raw(cached_result)
+            response_from_cache = SearchResponse.parse_raw(cached_result)
+
+            # Si c'est une recherche avancée, nous devons paginer les résultats du cache
+            if is_advanced:
+                offset = options.offset
+                per_page = options.per_page
+                paginated_hits = response_from_cache.hits[offset : offset + per_page]
+                response_from_cache.hits = paginated_hits
+                # Mettre à jour le total pour qu'il corresponde au nombre de hits de la page
+                #response_from_cache.total = len(paginated_hits)
+
+            return response_from_cache
 
         logger.info("Cache MISS for key: %s", cache_key)
-        response = await self._execute_search(
+        # _execute_search retourne la réponse complète pour la recherche avancée
+        full_response = await self._execute_search(
             index_name, qdata, options, user_id
         )
 
-        await self.cache.set(
-            cache_key, response.json(), expire=300
-        )
-        return response
+        # On met en cache la réponse complète (non paginée pour l'avancée)
+        await self.cache.set(cache_key, full_response.model_dump_json(), expire=300)
+
+        # Si c'est une recherche avancée, on pagine la réponse avant de la retourner
+        if is_advanced:
+            offset = options.offset
+            per_page = options.per_page
+            paginated_hits = full_response.hits[offset : offset + per_page]
+            # On crée une nouvelle réponse pour ne pas modifier l'objet mis en cache
+            paginated_response = full_response.copy(deep=True)
+            paginated_response.hits = paginated_hits
+            # Mettre à jour le total pour qu'il corresponde au nombre de hits de la page
+            #paginated_response.total = len(paginated_hits)
+            return paginated_response
+
+        return full_response
 
     async def get_index_stats(self, index_name: str) -> Dict[str, Any]:
         """Récupère les statistiques d'un index Meilisearch.
@@ -172,11 +206,15 @@ class SearchService:
         """Gère la recherche simple."""
         query_text = qdata if isinstance(qdata, str) else ""
 
+        # Pour la recherche simple, la limite de Meilisearch est `per_page`.
+        meili_options = ctx.options.copy(deep=True)
+        meili_options.limit = ctx.options.per_page
+
         result = await self._meili_search(
             index_name=ctx.index_name,
             query=query_text,
             attributes=['name'],
-            options=ctx.options
+            options=meili_options
         )
 
         hits = result.get('hits', [])
@@ -219,19 +257,27 @@ class SearchService:
         ctx: SearchContext
     ) -> SearchResponse:
         """Gère la recherche avancée avec scoring."""
+        # Pour la recherche avancée, `limit` est la limite de fetch pour Meili.
+        # `per_page` sera utilisé après le scoring.
         all_results = await self._parallel_strategies(
             ctx.index_name, qdata, ctx.options
         )
 
-        processed = self.utils.process_results(
-            all_results, qdata, limit=ctx.options.limit
-        )
+        # process_results traite tous les résultats récupérés.
+        # La pagination se fera dans la méthode `search` après la mise en cache.
+        processed = self.utils.process_results(all_results=all_results, query_data=qdata)
+
+        # On applique la limite de fetch ici, après le tri.
+        # Cela garantit que la liste complète est prête pour le cache et la pagination.
+        processed['hits'] = processed['hits'][:ctx.options.limit]
+        processed['total'] = len(processed['hits'])
 
         if ctx.is_resto_index :
             logger.debug(
                 "Enrichissement des %s restos pour l'utilisateur %s",
                 len(processed['hits']), ctx.user_id
             )
+            # On enrichit la liste complète avant de la retourner
             processed['hits'] = (
                 await self.resto_pastille_service.append_resto_pastille(
                     datas=processed['hits'],
@@ -239,6 +285,8 @@ class SearchService:
                 )
             )
 
+        # Le count_per_dep est calculé sur la liste complète des résultats pertinents
+        # avant la pagination finale.
         count_per_dep = self._calculate_count_per_dep(processed['hits'])
 
         duration = time.time() - ctx.start_time
@@ -250,6 +298,7 @@ class SearchService:
             ctx.index_name, qdata.original, duration, memory_mb
         )
 
+        # On retourne la réponse COMPLÈTE. La pagination sera gérée par la méthode `search`.
         return SearchResponse(
             hits=processed['hits'],
             total=processed['total'],

@@ -211,15 +211,13 @@ class SearchUtils:
         self,
         all_results: Dict[str, List[Dict[str, Any]]],
         query_data: QueryData,
-        limit: int = 10
     ) -> Dict[str, Any]:
         """
-        Traite les résultats : déduplique, score, trie et filtre.
+        Traite les résultats : déduplique, score et trie. La pagination est gérée par l'appelant.
 
         Args:
             all_results: Résultats bruts des stratégies
             query_data: Données de la query
-            limit: Nombre max de résultats
 
         Returns:
             Dict avec hits, total, has_exact_results, etc.
@@ -252,13 +250,10 @@ class SearchUtils:
             exact_results if has_exact_results else sorted_results
         )
 
-        # 5) Limitation
-        final_hits = final_hits[:limit]
-
         end_time = time.time()
 
         return {
-            'hits': final_hits,
+            'hits': final_hits, # Retourne la liste complète triée
             'total': len(final_hits),
             'has_exact_results': has_exact_results,
             'exact_count': len(exact_results),
