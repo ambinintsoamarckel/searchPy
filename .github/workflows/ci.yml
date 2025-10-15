@@ -129,10 +129,10 @@ jobs:
             cd /var/www/html/search_api
 
             # Met à jour l'image Docker depuis le registry
-            docker-compose pull
+            docker compose pull
 
             # Redémarre les services avec la nouvelle image
-            docker-compose up -d
+            docker compose up -d
 
             # (Optionnel) Nettoie les anciennes images non utilisées
             docker image prune -f
