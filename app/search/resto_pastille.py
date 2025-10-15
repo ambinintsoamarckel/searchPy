@@ -100,7 +100,12 @@ class RestoPastilleService:  # pylint: disable=too-few-public-methods
                 table_favori = self._get_favori_table_name(user_id)
                 # Safe: user_id is validated as positive integer
                 # Table name is constructed from validated integer only
-                sql_favori = f"SELECT idRubrique FROM {table_favori} WHERE (rubriqueType = 'resto' OR rubriqueType = 'restaurant') AND idRubrique = ANY($1)"  # nosec B608
+                # nosec B608 - SQL query avec paramètres sécurisés
+                sql_favori = (
+                    f"SELECT idRubrique FROM {table_favori} "
+                    f"WHERE (rubriqueType = 'resto' OR rubriqueType = 'restaurant') "
+                    f"AND idRubrique = ANY($1)"
+                )
 
                 tasks["favoris"] = self.db.execute_query(
                     sql_favori, all_ids
