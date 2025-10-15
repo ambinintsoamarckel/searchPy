@@ -1,9 +1,21 @@
 """Évaluation et scoring des champs."""
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from app.config import settings
 from app.models import QueryData
 from app.scoring.distance import string_distance
+
+
+@dataclass
+class EvaluationMetrics:
+    """Métriques d'évaluation d'un champ."""
+    found: List[Dict]
+    not_found: List[str]
+    total_distance: int
+    query_words: List[str]
+    candidate_words: List[str]
+    query_text: str
 
 
 class FieldEvaluator:
@@ -90,54 +102,63 @@ class FieldEvaluator:
 
     def _calculate_evaluation_metrics(
         self,
-        found: List[Dict],
-        not_found: List[str],
-        total_distance: int,
-        query_words: List[str],
-        candidate_words: List[str],
-        query_text: str,
+        metrics: EvaluationMetrics
     ) -> Dict[str, Any]:
         """Calcule les métriques de l'évaluation."""
-        found_count = len(found)
-        query_count = len(query_words)
-        candidate_count = len(candidate_words)
-        avg_distance = total_distance / found_count if found_count > 0 else 0.0
-        missing_terms = len(not_found)
+        found_count = len(metrics.found)
+        query_count = len(metrics.query_words)
+        candidate_count = len(metrics.candidate_words)
 
-        length_ratio = (
-            min(query_count, candidate_count) / max(query_count, candidate_count)
-            if query_count and candidate_count
-            else 1.0
+        avg_distance = (
+            metrics.total_distance / found_count if found_count > 0 else 0.0
         )
+        missing_terms = len(metrics.not_found)
+
+        length_ratio = self._calculate_length_ratio(query_count, candidate_count)
         coverage_ratio = found_count / query_count if query_count > 0 else 1.0
 
-        found_positions = {f["position"] for f in found}
-        extra_length = sum(
-            len(word)
-            for pos, word in enumerate(candidate_words)
-            if pos not in found_positions
+        extra_length = self._calculate_extra_length(
+            metrics.found, metrics.candidate_words
         )
-        query_length = len(query_text)
+        query_length = len(metrics.query_text)
         extra_length_ratio = extra_length / query_length if query_length > 0 else 0.0
 
-        metrics = {
-            "total_distance": total_distance,
+        return {
+            "total_distance": metrics.total_distance,
             "average_distance": avg_distance,
             "found_count": found_count,
             "query_count": query_count,
             "result_count": candidate_count,
             "extra_length": extra_length,
             "extra_length_ratio": extra_length_ratio,
+            "penalties": {
+                "mots_manquants": missing_terms,
+                "distance_moyenne": avg_distance,
+                "longueur_ratio": length_ratio,
+                "coverage_ratio": coverage_ratio,
+                "extra_length": extra_length,
+                "extra_length_ratio": extra_length_ratio,
+            }
         }
-        metrics["penalties"] = {
-            "mots_manquants": missing_terms,
-            "distance_moyenne": avg_distance,
-            "longueur_ratio": length_ratio,
-            "coverage_ratio": coverage_ratio,
-            "extra_length": extra_length,
-            "extra_length_ratio": extra_length_ratio,
-        }
-        return metrics
+
+    @staticmethod
+    def _calculate_length_ratio(query_count: int, candidate_count: int) -> float:
+        """Calcule le ratio de longueur entre query et candidat."""
+        if query_count and candidate_count:
+            return min(query_count, candidate_count) / max(query_count, candidate_count)
+        return 1.0
+
+    @staticmethod
+    def _calculate_extra_length(
+        found: List[Dict], candidate_words: List[str]
+    ) -> int:
+        """Calcule la longueur extra des mots non matchés."""
+        found_positions = {f["position"] for f in found}
+        return sum(
+            len(word)
+            for pos, word in enumerate(candidate_words)
+            if pos not in found_positions
+        )
 
     def evaluate_field(
         self, query_words: List[str], candidate_words: List[str], query_text: str
@@ -162,10 +183,19 @@ class FieldEvaluator:
             else:
                 not_found.append(q_word)
 
-        metrics = self._calculate_evaluation_metrics(
-            found, not_found, total_distance, query_words, candidate_words, query_text
+        metrics = EvaluationMetrics(
+            found=found,
+            not_found=not_found,
+            total_distance=total_distance,
+            query_words=query_words,
+            candidate_words=candidate_words,
+            query_text=query_text
         )
-        return {"found": found, "not_found": not_found, **metrics}
+
+        result = self._calculate_evaluation_metrics(metrics)
+        result["found"] = found
+        result["not_found"] = not_found
+        return result
 
     def _calculate_strategy_score(self, eval_result: Dict[str, Any]) -> float:
         """Calcule le score ajusté pour une évaluation de stratégie."""
@@ -253,55 +283,79 @@ class FieldEvaluator:
                 "details": {"error": "empty_query"}
             }
 
-        name_search_words = str(hit.get("name_search", "")).lower().split()
-        name_no_space_words = str(hit.get("name_no_space", "")).lower().split()
-
-        eval_search = self.evaluate_field(
-            query_data.wordsCleaned, name_search_words, query_data.cleaned
+        # Évaluation des stratégies
+        eval_search, name_search_score = self._evaluate_name_search_strategy(
+            hit, query_data
         )
-        name_search_score = self._calculate_strategy_score(eval_search)
-
-        eval_no_space = self.evaluate_field(
-            query_data.wordsNoSpace, name_no_space_words, query_data.no_space
+        eval_no_space, no_space_score = self._evaluate_no_space_strategy(
+            hit, query_data
         )
-        no_space_score = self._calculate_strategy_score(eval_no_space)
-        if no_space_score < settings.NO_SPACE_MIN_SCORE:
-            no_space_score = 0.0
 
+        # Détermination du gagnant
         winner = self._determine_winning_strategy(
             name_search_score, no_space_score, eval_search, eval_no_space
         )
-        base_score = winner["base_score"]
-        winning_eval = winner["eval"]
 
-        name_words = str(hit.get("name") or hit.get("nom", "")).lower().split()
-        eval_name = self.evaluate_field(
-            query_data.wordsOriginal, name_words, query_data.original
-        )
-        bonus = self.calculate_name_bonus(eval_name, query_data.wordsOriginal)
-        total_score = min(12.0, base_score + bonus)
+        # Calcul du bonus et score final
+        eval_name, bonus = self._evaluate_name_field(hit, query_data)
+        total_score = min(12.0, winner["base_score"] + bonus)
 
         match_type = self._determine_match_type(
-            winning_eval, winner["strategy"], total_score
+            winner["eval"], winner["strategy"], total_score
         )
 
         return {
             "name_search_score": name_search_score,
             "no_space_score": no_space_score,
-            "base_score": base_score,
+            "base_score": winner["base_score"],
             "winning_strategy": winner["strategy"],
             "name_score": bonus,
             "total_score": total_score,
             "name_search_matches": eval_search,
             "no_space_matches": eval_no_space,
             "name_matches": eval_name,
-            "_penalty_indices": winning_eval["penalties"],
-            "all_words_found": winning_eval["penalties"]["mots_manquants"] == 0,
+            "_penalty_indices": winner["eval"]["penalties"],
+            "all_words_found": winner["eval"]["penalties"]["mots_manquants"] == 0,
             "match_type": match_type,
             "match_priority": settings.TYPE_PRIORITY.get(
                 match_type, settings.TYPE_PRIORITY["partial"]
             ),
         }
+
+    def _evaluate_name_search_strategy(
+        self, hit: Dict[str, Any], query_data: QueryData
+    ) -> tuple[Dict[str, Any], float]:
+        """Évalue la stratégie name_search."""
+        name_search_words = str(hit.get("name_search", "")).lower().split()
+        eval_search = self.evaluate_field(
+            query_data.wordsCleaned, name_search_words, query_data.cleaned
+        )
+        score = self._calculate_strategy_score(eval_search)
+        return eval_search, score
+
+    def _evaluate_no_space_strategy(
+        self, hit: Dict[str, Any], query_data: QueryData
+    ) -> tuple[Dict[str, Any], float]:
+        """Évalue la stratégie no_space."""
+        name_no_space_words = str(hit.get("name_no_space", "")).lower().split()
+        eval_no_space = self.evaluate_field(
+            query_data.wordsNoSpace, name_no_space_words, query_data.no_space
+        )
+        score = self._calculate_strategy_score(eval_no_space)
+        if score < settings.NO_SPACE_MIN_SCORE:
+            score = 0.0
+        return eval_no_space, score
+
+    def _evaluate_name_field(
+        self, hit: Dict[str, Any], query_data: QueryData
+    ) -> tuple[Dict[str, Any], float]:
+        """Évalue le champ name et calcule le bonus."""
+        name_words = str(hit.get("name") or hit.get("nom", "")).lower().split()
+        eval_name = self.evaluate_field(
+            query_data.wordsOriginal, name_words, query_data.original
+        )
+        bonus = self.calculate_name_bonus(eval_name, query_data.wordsOriginal)
+        return eval_name, bonus
 
     def _calculate_bonus_score_terms(self, found_matches: List[Dict]) -> float:
         """Calcule le score pondéré des termes trouvés pour le bonus."""
