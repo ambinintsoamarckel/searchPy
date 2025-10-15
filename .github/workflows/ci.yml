@@ -109,3 +109,30 @@ jobs:
         run: |
           docker push ${{ secrets.DOCKER_USERNAME }}/searchpy:${{ env.IMAGE_VERSION }}
           docker push ${{ secrets.DOCKER_USERNAME }}/searchpy:latest
+
+  deploy-to-vps:
+    name: Deploy to VPS
+    needs: build-test-and-push # Ce job dépend du succès du précédent
+    runs-on: ubuntu-latest
+    # Ne s'exécute que sur la branche master ou sur un tag
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          script: |
+            # Se déplace dans le répertoire de l'application
+            cd /var/www/html/search_api
+
+            # Met à jour l'image Docker depuis le registry
+            docker-compose pull
+
+            # Redémarre les services avec la nouvelle image
+            docker-compose up -d
+
+            # (Optionnel) Nettoie les anciennes images non utilisées
+            docker image prune -f
