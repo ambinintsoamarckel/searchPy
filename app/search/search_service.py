@@ -10,6 +10,7 @@ import psutil
 from meilisearch_python_sdk import AsyncClient as MeiliClient
 
 from app.cache import cache_manager
+from app.scoring.dispersion import GeoDispersionService
 from app.config import settings
 from app.models import QueryData, SearchOptions, SearchResponse
 from app.search.resto_pastille import RestoPastilleService
@@ -37,6 +38,7 @@ class SearchService:
         self.client = MeiliClient(self.meili_host, self.meili_key)
         self.utils = SearchUtils()
         self.resto_pastille_service = resto_pastille_service
+        self.geo_dispersion_service = GeoDispersionService()
         self.cache = cache_manager
 
     async def _meili_search(
@@ -115,34 +117,24 @@ class SearchService:
         Returns:
             Un objet SearchResponse avec les résultats.
         """
-        is_advanced = isinstance(qdata, QueryData)
-
-        # Pour la recherche avancée, la clé de cache ignore la pagination (limit/offset)
-        # car nous mettons en cache l'ensemble des résultats avant de paginer.
-        if is_advanced:
-            # La clé de cache dépend de `limit` (fetch) mais pas de `per_page` ou `offset` (pagination)
-            cache_options = options.copy(deep=True)
-            cache_options.per_page = -1 # Marqueur pour ignorer la pagination
-            cache_options.offset = 0
-            cache_key = f"search:{index_name}:{str(qdata)}:{str(cache_options)}:{user_id}"
-        else:
-            # Pour la recherche simple, la pagination fait partie de la clé
-            cache_key = f"search:{index_name}:{str(qdata)}:{str(options)}:{user_id}"
+        # La clé de cache ignore désormais la pagination (per_page/offset) pour les deux types de recherche.
+        # On met en cache l'ensemble des résultats (défini par `limit`) avant de paginer.
+        cache_options = options.copy(deep=True)
+        cache_options.per_page = -1  # Marqueur pour ignorer la pagination dans la clé
+        cache_options.offset = 0
+        cache_key = f"search:{index_name}:{str(qdata)}:{str(cache_options)}:{user_id}"
 
         cached_result = await self.cache.get(cache_key)
         if cached_result:
             logger.info("Cache HIT for key: %s", cache_key)
             response_from_cache = SearchResponse.parse_raw(cached_result)
 
-            # Si c'est une recherche avancée, nous devons paginer les résultats du cache
-            if is_advanced:
-                offset = options.offset
-                per_page = options.per_page
-                paginated_hits = response_from_cache.hits[offset : offset + per_page]
-                response_from_cache.hits = paginated_hits
-                # Mettre à jour le total pour qu'il corresponde au nombre de hits de la page
-                #response_from_cache.total = len(paginated_hits)
-
+            # On pagine les résultats du cache avant de les retourner.
+            # Ceci s'applique maintenant à la recherche simple ET avancée.
+            offset = options.offset
+            per_page = options.per_page
+            paginated_hits = response_from_cache.hits[offset : offset + per_page]
+            response_from_cache.hits = paginated_hits
             return response_from_cache
 
         logger.info("Cache MISS for key: %s", cache_key)
@@ -151,22 +143,15 @@ class SearchService:
             index_name, qdata, options, user_id
         )
 
-        # On met en cache la réponse complète (non paginée pour l'avancée)
+        # On met en cache la réponse complète (non paginée)
         await self.cache.set(cache_key, full_response.model_dump_json(), expire=300)
-
-        # Si c'est une recherche avancée, on pagine la réponse avant de la retourner
-        if is_advanced:
-            offset = options.offset
-            per_page = options.per_page
-            paginated_hits = full_response.hits[offset : offset + per_page]
-            # On crée une nouvelle réponse pour ne pas modifier l'objet mis en cache
-            paginated_response = full_response.copy(deep=True)
-            paginated_response.hits = paginated_hits
-            # Mettre à jour le total pour qu'il corresponde au nombre de hits de la page
-            #paginated_response.total = len(paginated_hits)
-            return paginated_response
-
-        return full_response
+        # On pagine la réponse complète avant de la retourner à l'utilisateur.
+        offset = options.offset
+        per_page = options.per_page
+        paginated_hits = full_response.hits[offset : offset + per_page]
+        paginated_response = full_response.copy(deep=True)
+        paginated_response.hits = paginated_hits
+        return paginated_response
 
     async def get_index_stats(self, index_name: str) -> Dict[str, Any]:
         """Récupère les statistiques d'un index Meilisearch.
@@ -205,16 +190,11 @@ class SearchService:
     ) -> SearchResponse:
         """Gère la recherche simple."""
         query_text = qdata if isinstance(qdata, str) else ""
-
-        # Pour la recherche simple, la limite de Meilisearch est `per_page`.
-        meili_options = ctx.options.copy(deep=True)
-        meili_options.limit = ctx.options.per_page
-
         result = await self._meili_search(
             index_name=ctx.index_name,
             query=query_text,
             attributes=['name'],
-            options=meili_options
+            options=ctx.options
         )
 
         hits = result.get('hits', [])
@@ -229,6 +209,13 @@ class SearchService:
                 datas=hits,
                 user_id=ctx.user_id
             )
+        # Appliquer la dispersion géographique
+        # La pagination est gérée plus tard dans la méthode `search`
+        dispersion_result = self.geo_dispersion_service.disperse_results(
+            hits=hits,
+        )
+        # On récupère les hits dispersés pour la suite du traitement
+        dispersed_hits = dispersion_result['hits']
 
         duration = time.time() - ctx.start_time
         memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
@@ -240,15 +227,15 @@ class SearchService:
         )
 
         return SearchResponse(
-            hits=hits,
-            total=len(hits),
+            hits=dispersed_hits,
+            total=len(dispersed_hits),
             has_exact_results=False,
             exact_count=0,
-            total_before_filter=estimated_total or len(hits),
+            total_before_filter=estimated_total or len(dispersed_hits),
             query_time_ms=duration * 1000,
             preprocessing=None,
             memory_used_mb=memory_mb,
-            count_per_dep=self._calculate_count_per_dep(hits),
+            count_per_dep=self._calculate_count_per_dep(dispersed_hits),
         )
 
     async def _handle_advanced_search(
