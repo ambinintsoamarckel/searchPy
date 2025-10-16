@@ -4,7 +4,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 # Importez vos configurations et services
@@ -119,3 +119,30 @@ async def search(req: SearchRequest):
 def root():
     """Root endpoint to check API status."""
     return {"status": "ok", "message": "SearchPy API is running 🚀"}
+@app.get("/health", status_code=status.HTTP_200_OK, tags=["Monitoring"])
+async def health_check():
+    """
+    Health check endpoint.
+
+    Checks connectivity to essential services like Database and Redis.
+    Returns 200 OK if all services are reachable, otherwise 503 Service Unavailable.
+    """
+    services_status = {"database": "ok", "redis": "ok"}
+    try:
+        # 1. Check Redis connection
+        await cache_manager.redis.ping()
+    except RedisConnectionError:
+        services_status["redis"] = "error"
+        logger.error("Health check failed: Redis connection error.")
+
+    try:
+        # 2. Check Database connection by executing a simple query
+        await db_connector.execute_query("SELECT 1")
+    except ConnectionError:
+        services_status["database"] = "error"
+        logger.error("Health check failed: Database connection error.")
+
+    if "error" in services_status.values():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=services_status)
+
+    return services_status

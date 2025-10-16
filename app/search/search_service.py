@@ -117,6 +117,7 @@ class SearchService:
         Returns:
             Un objet SearchResponse avec les résultats.
         """
+        request_start_time = time.time()
         # La clé de cache ignore désormais la pagination (per_page/offset) pour les deux types de recherche.
         # On met en cache l'ensemble des résultats (défini par `limit`) avant de paginer.
         cache_options = options.copy(deep=True)
@@ -128,6 +129,9 @@ class SearchService:
         if cached_result:
             logger.info("Cache HIT for key: %s", cache_key)
             response_from_cache = SearchResponse.parse_raw(cached_result)
+            # 1. Rafraîchir la durée de vie (TTL) du cache à chaque accès
+            await self.cache.set(cache_key, cached_result, expire=300)
+            logger.debug("Cache TTL refreshed for key: %s", cache_key)
 
             # On pagine les résultats du cache avant de les retourner.
             # Ceci s'applique maintenant à la recherche simple ET avancée.
@@ -135,6 +139,9 @@ class SearchService:
             per_page = options.per_page
             paginated_hits = response_from_cache.hits[offset : offset + per_page]
             response_from_cache.hits = paginated_hits
+            # 2. Mettre à jour le temps de requête pour refléter la performance du cache
+            duration = time.time() - request_start_time
+            response_from_cache.query_time_ms = duration * 1000
             return response_from_cache
 
         logger.info("Cache MISS for key: %s", cache_key)
@@ -151,6 +158,9 @@ class SearchService:
         paginated_hits = full_response.hits[offset : offset + per_page]
         paginated_response = full_response.copy(deep=True)
         paginated_response.hits = paginated_hits
+        # Mettre à jour le temps de requête pour inclure le temps de pagination
+        duration = time.time() - request_start_time
+        paginated_response.query_time_ms = duration * 1000
         return paginated_response
 
     async def get_index_stats(self, index_name: str) -> Dict[str, Any]:
