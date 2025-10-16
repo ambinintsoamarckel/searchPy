@@ -246,5 +246,5 @@ class RestoPastilleService:  # pylint: disable=too-few-public-methods
         # 4) Enrichir les données
         for data in datas:
             self._enrich_single_data(data, maps, user_id)
-
         return datas
+# ---------------------------------------------------------------------
