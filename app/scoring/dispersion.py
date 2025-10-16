@@ -40,7 +40,7 @@ class GeoPoint:
         return None
 
 
-class GeoDispersionService:
+class GeoDispersionService:  # pylint: disable=too-few-public-methods
     """Service pour disperser géographiquement les résultats de recherche."""
 
     def __init__(self, grid_size_degrees: float = GEO_DISPERSION_GRID_SIZE):

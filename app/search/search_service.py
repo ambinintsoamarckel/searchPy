@@ -41,6 +41,24 @@ class SearchService:
         self.geo_dispersion_service = GeoDispersionService()
         self.cache = cache_manager
 
+    def _paginate_response(
+        self,
+        response: SearchResponse,
+        options: SearchOptions,
+        request_start_time: float
+    ) -> SearchResponse:
+        """
+        Applique la pagination aux résultats de recherche et met à jour le temps de requête.
+        """
+        offset = options.offset
+        per_page = options.per_page
+        paginated_hits = response.hits[offset : offset + per_page]
+        paginated_response = response.model_copy(deep=True)
+        paginated_response.hits = paginated_hits
+        duration = time.time() - request_start_time
+        paginated_response.query_time_ms = duration * 1000
+        return paginated_response
+
     async def _meili_search(
             self,
             index_name: str,
@@ -133,16 +151,7 @@ class SearchService:
             await self.cache.set(cache_key, cached_result, expire=300)
             logger.debug("Cache TTL refreshed for key: %s", cache_key)
 
-            # On pagine les résultats du cache avant de les retourner.
-            # Ceci s'applique maintenant à la recherche simple ET avancée.
-            offset = options.offset
-            per_page = options.per_page
-            paginated_hits = response_from_cache.hits[offset : offset + per_page]
-            response_from_cache.hits = paginated_hits
-            # 2. Mettre à jour le temps de requête pour refléter la performance du cache
-            duration = time.time() - request_start_time
-            response_from_cache.query_time_ms = duration * 1000
-            return response_from_cache
+            return self._paginate_response(response_from_cache, options, request_start_time)
 
         logger.info("Cache MISS for key: %s", cache_key)
         # _execute_search retourne la réponse complète pour la recherche avancée
@@ -152,16 +161,7 @@ class SearchService:
 
         # On met en cache la réponse complète (non paginée)
         await self.cache.set(cache_key, full_response.model_dump_json(), expire=300)
-        # On pagine la réponse complète avant de la retourner à l'utilisateur.
-        offset = options.offset
-        per_page = options.per_page
-        paginated_hits = full_response.hits[offset : offset + per_page]
-        paginated_response = full_response.model_copy(deep=True)
-        paginated_response.hits = paginated_hits
-        # Mettre à jour le temps de requête pour inclure le temps de pagination
-        duration = time.time() - request_start_time
-        paginated_response.query_time_ms = duration * 1000
-        return paginated_response
+        return self._paginate_response(full_response, options, request_start_time)
 
     async def get_index_stats(self, index_name: str) -> Dict[str, Any]:
         """Récupère les statistiques d'un index Meilisearch.
