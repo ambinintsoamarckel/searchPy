@@ -200,7 +200,6 @@ class RestoPastilleService:  # pylint: disable=too-few-public-methods
         Returns:
             List[Dict[str, Any]]: Données enrichies
         """
-        debug_logger.debug(f"RestoPastilleService - user_id: {user_id}, datas: {datas}")
         if not datas:
             return datas
 
@@ -230,10 +229,11 @@ class RestoPastilleService:  # pylint: disable=too-few-public-methods
 
         # Log des résultats des requêtes
         debug_logger.debug(
-            f"RestoPastilleService - user_id: {user_id}, "
-            f"is_deleted_map: {is_deleted_map}, "
-            f"modif_map: {modif_map}, "
-            f"favori_map: {favori_map}"
+            "RestoPastilleService - user_id: %s, is_deleted_map: %s, modif_map: %s, favori_map: %s",
+            user_id,
+            is_deleted_map,
+            modif_map,
+            favori_map
         )
 
         # Regrouper les maps dans un dictionnaire

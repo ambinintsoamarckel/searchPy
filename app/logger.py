@@ -1,7 +1,9 @@
+"""Module de configuration pour les loggers de l'application."""
 
 import logging
 from logging.handlers import RotatingFileHandler
 import sys
+import os
 
 # ==============================================================================
 # Configuration
@@ -76,7 +78,6 @@ debug_logger.propagate = False
 
 def init_loggers():
     """Crée le répertoire de logs s'il n'existe pas."""
-    import os
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
 
