@@ -35,6 +35,9 @@ jobs:
           pip install -r requirements.txt pytest pytest-cov bandit pylint
 
       # --- Étape 1: Tests Unitaires (Qualité) ---
+      - name: Create logs directory
+        run: mkdir -p logs
+
       - name: Run tests and generate coverage report
         run: |
           # Exécute les tests et génère un rapport de couverture pour information
