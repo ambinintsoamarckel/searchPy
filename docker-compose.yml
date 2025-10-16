@@ -10,6 +10,16 @@ services:
       - ./logs:/app/logs
     env_file:
       - .env
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c ''import sys, http.client; conn = http.client.HTTPConnection("localhost", 8000); conn.request("GET", "/health"); sys.exit(0) if conn.getresponse().status == 200 else sys.exit(1)''',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     depends_on:
       - redis
 
