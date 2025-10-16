@@ -7,10 +7,6 @@ from app.scoring.distance import StringDistance
 from app.models import QueryData, SearchOptions, SearchResponse
 from .test_utils import print_test_name, print_test_result
 
-# Marquer tous les tests de ce fichier comme asynchrones
-pytestmark = pytest.mark.asyncio
-
-
 @pytest.mark.asyncio
 class TestCacheLogic:
     """Tests pour la logique de cache (HIT/MISS)."""
@@ -84,8 +80,8 @@ class TestCacheLogic:
             search_service_mock.cache.get.assert_called_once()
             # 2. La recherche N'A PAS été exécutée (car le cache a été trouvé)
             mock_execute_search.assert_not_called()
-            # 3. Le résultat n'a pas été remis en cache (inutile)
-            search_service_mock.cache.set.assert_not_called()
+            # 3. Le cache a été rafraîchi (TTL mis à jour)
+            search_service_mock.cache.set.assert_called_once()
             # 4. La réponse est correcte et vient du cache
             assert response.hits[0]["id"] == 123
             print_test_result(test_name, passed=True)

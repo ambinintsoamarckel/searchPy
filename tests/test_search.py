@@ -22,9 +22,14 @@ def test_search_basic():
     test_name = "test_search_basic"
     print_test_name(test_name)
     try:
-        # patch the service used by the FastAPI app
-        main.service = DummyService()
+        # --- Dependency Override ---
+        def get_dummy_service():
+            return DummyService()
+
+        # Override the dependency for this test
+        main.app.dependency_overrides[main.get_service] = get_dummy_service
         client = TestClient(main.app)
+        # -------------------------
 
         qdata = QueryData(
             original="Petit",
@@ -52,6 +57,6 @@ def test_search_basic():
         assert isinstance(body['hits'], list)
         assert body['hits'][0]['name'] == 'Le Petit Resto'
         print_test_result(test_name, passed=True)
-    except Exception as e:
-        print_test_result(test_name, passed=False)
-        raise e
+    finally:
+        # Clean up the dependency override
+        main.app.dependency_overrides = {}

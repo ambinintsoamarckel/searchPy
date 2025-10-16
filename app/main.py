@@ -4,7 +4,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 # Importez vos configurations et services
@@ -93,17 +93,22 @@ app = FastAPI(
 # L'instance search_service est déjà initialisée ci-dessus (dans la section 1)
 # Remplacez l'ancienne ligne 'service = SearchService()' par 'search_service = SearchService(...)'
 
+def get_service() -> SearchService:
+    """Dépendance FastAPI pour obtenir l'instance du service de recherche."""
+    return service
+
+
 @app.post("/search", response_model=SearchResponse)
-async def search(req: SearchRequest):
+async def search(req: SearchRequest, svc: SearchService = Depends(get_service)):
     """
     POST /search endpoint.
     Nous supposons ici que le user_id est extrait du contexte de la requête
     (ex: headers, token JWT) et n'est pas directement dans SearchRequest.
     """
     try:
-        logger.info("Received request: %s", req.json())
+        logger.info("Received request: %s", req.model_dump_json())
 
-        resp = await service.search(
+        resp = await svc.search(
             index_name=req.index_name,
             qdata=req.query_data,
             options=req.options,

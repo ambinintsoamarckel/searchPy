@@ -1,6 +1,6 @@
 """Modèles Pydantic pour les requêtes et réponses."""
 from typing import List, Optional, Dict, Any,Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from app.config import settings
 
 class QueryData(BaseModel): # pylint: disable=too-few-public-methods
@@ -53,6 +53,4 @@ class SearchResponse(BaseModel): # pylint: disable=too-few-public-methods
     memory_used_mb: Optional[float] = None
     count_per_dep: Dict[str, int] = Field(default_factory=dict)
 
-    class Config: # pylint: disable=too-few-public-methods
-        """Pydantic configuration."""
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")

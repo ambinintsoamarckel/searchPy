@@ -120,7 +120,7 @@ class SearchService:
         request_start_time = time.time()
         # La clé de cache ignore désormais la pagination (per_page/offset) pour les deux types de recherche.
         # On met en cache l'ensemble des résultats (défini par `limit`) avant de paginer.
-        cache_options = options.copy(deep=True)
+        cache_options = options.model_copy(deep=True)
         cache_options.per_page = -1  # Marqueur pour ignorer la pagination dans la clé
         cache_options.offset = 0
         cache_key = f"search:{index_name}:{str(qdata)}:{str(cache_options)}:{user_id}"
@@ -128,7 +128,7 @@ class SearchService:
         cached_result = await self.cache.get(cache_key)
         if cached_result:
             logger.info("Cache HIT for key: %s", cache_key)
-            response_from_cache = SearchResponse.parse_raw(cached_result)
+            response_from_cache = SearchResponse.model_validate_json(cached_result)
             # 1. Rafraîchir la durée de vie (TTL) du cache à chaque accès
             await self.cache.set(cache_key, cached_result, expire=300)
             logger.debug("Cache TTL refreshed for key: %s", cache_key)
@@ -156,7 +156,7 @@ class SearchService:
         offset = options.offset
         per_page = options.per_page
         paginated_hits = full_response.hits[offset : offset + per_page]
-        paginated_response = full_response.copy(deep=True)
+        paginated_response = full_response.model_copy(deep=True)
         paginated_response.hits = paginated_hits
         # Mettre à jour le temps de requête pour inclure le temps de pagination
         duration = time.time() - request_start_time

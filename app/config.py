@@ -1,6 +1,7 @@
 """Configuration du microservice de recherche."""
 from typing import Dict
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 
 
 class Settings(BaseSettings): # pylint: disable=too-few-public-methods
@@ -176,11 +177,11 @@ class Settings(BaseSettings): # pylint: disable=too-few-public-methods
     ENABLE_METRICS: bool = True
     MAX_CPU_WORKERS: int = 2
 
-    class Config: # pylint: disable=too-few-public-methods
-        """Pydantic configuration class."""
-        env_file = ".env"
-        case_sensitive = True
-        extra = "ignore"
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
 
 
 settings = Settings()
