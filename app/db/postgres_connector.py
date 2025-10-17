@@ -1,7 +1,7 @@
 """PostgreSQL database connector."""
 from typing import List, Dict, Any, Optional
 import asyncpg
-
+from app.logger import logger
 class PostgresConnector:
     """Gère un pool de connexions asynchrone à PostgreSQL en utilisant l'URL."""
 
