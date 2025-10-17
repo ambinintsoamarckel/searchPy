@@ -22,7 +22,7 @@ class SearchOptions(BaseModel): # pylint: disable=too-few-public-methods
     # Limite de récupération des candidats depuis Meilisearch (surtout pour la recherche avancée)
     limit: int = 200
     # Nombre de résultats par page pour la pagination finale
-    per_page: int = 10
+    per_page: int = 100
     offset: int = 0
     # Le tri pour Meilisearch est une liste de chaînes: ["field:order"]
     sort: Optional[List[str]] = None

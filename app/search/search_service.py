@@ -1,7 +1,6 @@
 """Module contenant le service de recherche principal."""
 # app/search/search_service.py
 import asyncio
-import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
@@ -15,8 +14,7 @@ from app.config import settings
 from app.models import QueryData, SearchOptions, SearchResponse
 from app.search.resto_pastille import RestoPastilleService
 from app.search.search_utils import SearchUtils
-
-logger = logging.getLogger("search-api")
+from ..logger import logger
 
 
 @dataclass

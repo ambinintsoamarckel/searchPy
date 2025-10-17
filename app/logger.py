@@ -1,85 +1,59 @@
-"""Module de configuration pour les loggers de l'application."""
+"""
+Module de configuration pour le logger centralisé de l'application.
 
-import logging
-from logging.handlers import RotatingFileHandler
+Ce module utilise Loguru pour fournir un logger pré-configuré avec des sorties
+vers la console (avec couleurs) et des fichiers rotatifs.
+"""
+
 import sys
-import os
+from loguru import logger
 
 # ==============================================================================
-# Configuration
+# Configuration de Loguru
 # ==============================================================================
 
-LOG_DIR = "logs"
-MAX_BYTES = 10 * 1024 * 1024  # 10 MB
-BACKUP_COUNT = 5
+# 1. Supprimer le handler par défaut pour éviter les doublons
+logger.remove()
 
-# ==============================================================================
-# Formatters
-# ==============================================================================
-
-# Formatter standard pour les logs généraux
-standard_formatter = logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+# 2. Définir un format commun pour les logs
+#    Inclut le temps, le niveau, le module, la fonction et le message.
+log_format = (
+    "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+    "<level>{level: <8}</level> | "
+    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+    "<level>{message}</level>"
 )
 
-# Formatter simple pour le débug, centré sur le message
-debug_formatter = logging.Formatter(
-    '%(asctime)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+# 3. Ajouter un handler pour la sortie console (stderr)
+#    - Les logs seront colorisés.
+#    - Affiche les logs à partir du niveau INFO.
+logger.add(
+    sys.stderr,
+    level="INFO",
+    format=log_format,
+    colorize=True,
+    backtrace=True,
+    diagnose=True  # Pour un meilleur débogage des exceptions
 )
 
-# ==============================================================================
-# Handlers
-# ==============================================================================
-
-# Handler pour la sortie console (stdout)
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(standard_formatter)
-
-# Handler pour les logs généraux dans un fichier rotatif
-info_handler = RotatingFileHandler(
-    f'{LOG_DIR}/info.log',
-    maxBytes=MAX_BYTES,
-    backupCount=BACKUP_COUNT
+# 4. Ajouter un handler pour écrire les logs dans un fichier rotatif
+#    - Crée un nouveau fichier chaque jour à minuit.
+#    - Conserve les logs pendant 30 jours.
+#    - Compresse les anciens fichiers de log.
+#    - Affiche tous les logs à partir du niveau DEBUG.
+logger.add(
+    "logs/app.log",
+    level="DEBUG",
+    format=log_format,
+    rotation="00:00",  # Rotation journalière
+    retention="30 days",
+    compression="zip",
+    encoding="utf-8"
 )
-info_handler.setFormatter(standard_formatter)
 
-# Handler pour les logs de débug dans un fichier rotatif
-debug_handler = RotatingFileHandler(
-    f'{LOG_DIR}/debug.log',
-    maxBytes=MAX_BYTES,
-    backupCount=BACKUP_COUNT
-)
-debug_handler.setFormatter(debug_formatter)
-
-# ==============================================================================
-# Loggers
-# ==============================================================================
-
-# --- Logger Principal ---
-# Usage : pour les informations générales de l'application
-logger = logging.getLogger("searchpy_logger")
-logger.setLevel(logging.INFO)
-logger.addHandler(stream_handler)
-logger.addHandler(info_handler)
-logger.propagate = False
-
-# --- Logger de Débug ---
-# Usage : pour le débogage spécifique (ex: requêtes, user_id)
-debug_logger = logging.getLogger("debug_logger")
-debug_logger.setLevel(logging.DEBUG)
-debug_logger.addHandler(debug_handler)
-debug_logger.propagate = False
-
-# ==============================================================================
-# Initialisation
-# ==============================================================================
-
-def init_loggers():
-    """Crée le répertoire de logs s'il n'existe pas."""
-    if not os.path.exists(LOG_DIR):
-        os.makedirs(LOG_DIR)
-
-# Appel à l'initialisation pour s'assurer que le répertoire existe
-init_loggers()
+# Le logger est maintenant configuré et prêt à être importé dans d'autres modules.
+# Exemple d'utilisation :
+# from app.logger import logger
+# logger.info("Ceci est un message d'information.")
+# logger.debug("Ceci est un message de débogage.")
+# logger.warning("Attention, quelque chose d'inattendu s'est produit.")

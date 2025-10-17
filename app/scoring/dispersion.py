@@ -1,9 +1,8 @@
 """Service de dispersion géographique pour pagination équilibrée."""
-import logging
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 
-logger = logging.getLogger("search-api")
+from ..logger import logger
 
 # 🎯 CONSTANTES DE CONFIGURATION
 GEO_DISPERSION_GRID_SIZE = 0.1  # Taille de grille en degrés (≈11km)

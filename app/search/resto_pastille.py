@@ -228,7 +228,7 @@ class RestoPastilleService:  # pylint: disable=too-few-public-methods
         )
 
         # Log des résultats des requêtes
-        debug_logger.debug(
+        logger.debug(
             "RestoPastilleService - user_id: %s, is_deleted_map: %s, modif_map: %s, favori_map: %s",
             user_id,
             is_deleted_map,

@@ -1,9 +1,7 @@
 """Main module for the FastAPI application."""
 import os
-import logging
-from logging.handlers import RotatingFileHandler
 from contextlib import asynccontextmanager
-
+import os
 from fastapi import Depends, FastAPI, HTTPException, status
 from redis.exceptions import ConnectionError as RedisConnectionError
 
@@ -15,6 +13,7 @@ from .search.search_service import SearchService
 from .search.resto_pastille import RestoPastilleService
 from .db.postgres_connector import PostgresConnector # 👈 Votre nouveau connecteur
 from .cache import cache_manager # 👈 Votre nouveau manager de cache
+from .logger import logger
 
 
 # --- Initialisation des variables globales ---
@@ -33,21 +32,6 @@ search_service: SearchService = SearchService(
 )
 # Alias `service` pour compatibilité avec les tests qui patchent `main.service`
 service = search_service
-
-# --- Configuration et Loggers (inchangée) ---
-log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# Créer le répertoire de logs s'il n'existe pas
-LOG_DIR = 'logs'
-os.makedirs(LOG_DIR, exist_ok=True)
-log_file = os.path.join(LOG_DIR, 'search-api.log')
-
-file_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024 * 5, backupCount=5)
-file_handler.setFormatter(log_formatter)
-logger = logging.getLogger("search-api")
-logger.setLevel(logging.INFO)
-logger.addHandler(file_handler)
-logger.propagate = False
 
 # ---------------------------------------------------------------------------------------
 ## 2. Gestion des événements de cycle de vie (Startup/Shutdown)

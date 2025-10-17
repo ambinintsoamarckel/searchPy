@@ -42,7 +42,7 @@ class PostgresConnector:
 
     async def create_favori_table(self, user_id: int):
         """Crée les tables de favoris si elles n'existent pas."""
-        print(f"Tentative de création des tables de favoris pour l'utilisateur {user_id}.")
+        logger.info(f"Tentative de création des tables de favoris pour l'utilisateur {user_id}.")
 
     async def close(self):
         """Ferme le pool de connexions proprement."""
