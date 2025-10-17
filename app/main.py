@@ -3,6 +3,7 @@ import os
 from contextlib import asynccontextmanager
 import os
 from fastapi import Depends, FastAPI, HTTPException, status
+import json
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 # Importez vos configurations et services
@@ -45,16 +46,16 @@ async def lifespan(_app: FastAPI):
     try:
         await db_connector.connect()
         logger.info("PostgreSQL connection pool established successfully.")
-    except ConnectionError as e:
-        logger.error("Failed to connect to PostgreSQL: %s", e)
+    except Exception as e:
+        logger.error("Failed to connect to PostgreSQL: {error}", error=e)
         # Vous pourriez choisir d'arrêter l'application ici
 
     # 2. Initialisation du cache
     try:
         await cache_manager.redis.ping()
         logger.info("Redis cache connected successfully.")
-    except RedisConnectionError as e:
-        logger.error("Failed to connect to Redis: %s", e)
+    except Exception as e:
+        logger.error("Failed to connect to Redis: {error}", error=e)
 
     yield # L'application commence à traiter les requêtes
 
@@ -90,7 +91,10 @@ async def search(req: SearchRequest, svc: SearchService = Depends(get_service)):
     (ex: headers, token JWT) et n'est pas directement dans SearchRequest.
     """
     try:
-        logger.info("Received request: %s", req.model_dump_json())
+        # On formate le JSON pour une meilleure lisibilité dans les logs
+        pretty_request_body = json.dumps(req.model_dump(), indent=2, ensure_ascii=False)
+        # On ajoute un saut de ligne avant le JSON pour l'isoler visuellement
+        logger.info("Received request:\n{request_body}", request_body=pretty_request_body)
 
         resp = await svc.search(
             index_name=req.index_name,

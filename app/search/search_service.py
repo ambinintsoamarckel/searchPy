@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import psutil
 from meilisearch_python_sdk import AsyncClient as MeiliClient
+from collections import Counter
 
 from app.cache import cache_manager
 from app.scoring.dispersion import GeoDispersionService
@@ -103,16 +104,16 @@ class SearchService:
         self, hits: List[Dict[str, Any]]
     ) -> Dict[str, int]:
         """Calcule le nombre de résultats par département."""
-        count_per_dep: Dict[str, int] = {}
-        for item in hits:
-            dep = item.get('dep')
-            if dep is not None:
-                try:
-                    dep_int = int(dep)
-                    dep_key = f"{dep_int:02d}"
-                    count_per_dep[dep_key] = count_per_dep.get(dep_key, 0) + 1
-                except ValueError:
-                    continue
+        # Utilise une list comprehension pour extraire et formater les départements
+        # en ignorant les valeurs non valides (non numériques).
+        departments = [
+            f"{int(hit['dep']):02d}"
+            for hit in hits
+            if hit.get('dep') and str(hit['dep']).isdigit()
+        ]
+        # Utilise collections.Counter pour compter les occurrences
+        count_per_dep = Counter(departments)
+        # Retourne un dictionnaire trié par clé (code département)
         return dict(sorted(count_per_dep.items()))
 
     async def search(
@@ -143,15 +144,15 @@ class SearchService:
 
         cached_result = await self.cache.get(cache_key)
         if cached_result:
-            logger.info("Cache HIT for key: %s", cache_key)
+            logger.info("Cache HIT for key: {key}", key=cache_key)
             response_from_cache = SearchResponse.model_validate_json(cached_result)
             # 1. Rafraîchir la durée de vie (TTL) du cache à chaque accès
             await self.cache.set(cache_key, cached_result, expire=300)
-            logger.debug("Cache TTL refreshed for key: %s", cache_key)
+            logger.debug("Cache TTL refreshed for key: {key}", key=cache_key)
 
             return self._paginate_response(response_from_cache, options, request_start_time)
 
-        logger.info("Cache MISS for key: %s", cache_key)
+        logger.info("Cache MISS for key: {key}", key=cache_key)
         # _execute_search retourne la réponse complète pour la recherche avancée
         full_response = await self._execute_search(
             index_name, qdata, options, user_id
@@ -229,9 +230,9 @@ class SearchService:
         memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
 
         logger.info(
-            "Recherche simple (index: %s, query: '%s') : "
-            "Durée = %.4fs | RAM = %.2f Mo",
-            ctx.index_name, query_text, duration, memory_mb
+            "Recherche simple (index: {index}, query: '{query}') : "
+            "Durée = {duration:.4f}s | RAM = {ram:.2f} Mo",
+            index=ctx.index_name, query=query_text, duration=duration, ram=memory_mb
         )
 
         return SearchResponse(
@@ -288,9 +289,9 @@ class SearchService:
         memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
 
         logger.info(
-            "Recherche avancée (index: %s, query: %s) : "
-            "Durée = %.4fs | RAM = %.2f Mo",
-            ctx.index_name, qdata.original, duration, memory_mb
+            "Recherche avancée (index: {index}, query: {query}) : "
+            "Durée = {duration:.4f}s | RAM = {ram:.2f} Mo",
+            index=ctx.index_name, query=qdata.original, duration=duration, ram=memory_mb
         )
 
         # On retourne la réponse COMPLÈTE. La pagination sera gérée par la méthode `search`.

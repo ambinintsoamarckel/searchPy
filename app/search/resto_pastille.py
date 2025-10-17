@@ -2,8 +2,9 @@
 
 import asyncio
 from typing import List, Dict, Any, Optional
+import json
 
-from app.logger import debug_logger
+from app.logger import logger
 
 PostgresConnector = Any
 
@@ -210,12 +211,18 @@ class RestoPastilleService:  # pylint: disable=too-few-public-methods
 
         # 2) Construire et exécuter les requêtes en parallèle
         tasks = self._build_database_tasks(all_ids, user_id)
-        results = await asyncio.gather(*tasks.values())
+
+        # Exécuter les tâches et récupérer les résultats dans un dictionnaire
+        # pour un accès fiable par clé, évitant les erreurs d'index.
+        task_keys = list(tasks.keys())
+        task_values = list(tasks.values())
+        results_list = await asyncio.gather(*task_values)
+        results = dict(zip(task_keys, results_list))
 
         # Récupération des résultats
-        is_deleted_rows = results[0]
-        modif_rows = results[1]
-        favori_rows = results[2] if user_id else []
+        is_deleted_rows = results.get("is_deleted", [])
+        modif_rows = results.get("modifs", [])
+        favori_rows = results.get("favoris", [])
 
         # 3) Construire les maps
         is_deleted_map, modif_map, favori_map = (
@@ -228,12 +235,20 @@ class RestoPastilleService:  # pylint: disable=too-few-public-methods
         )
 
         # Log des résultats des requêtes
+        # Formatage des dictionnaires en JSON pour une meilleure lisibilité
+        pretty_deleted = json.dumps(is_deleted_map, indent=2)
+        pretty_modif = json.dumps(modif_map, indent=2)
+        pretty_favori = json.dumps(favori_map, indent=2)
+
         logger.debug(
-            "RestoPastilleService - user_id: %s, is_deleted_map: %s, modif_map: %s, favori_map: %s",
-            user_id,
-            is_deleted_map,
-            modif_map,
-            favori_map
+            "RestoPastilleService - user_id: {user_id}\n"
+            "is_deleted_map:\n{deleted}\n"
+            "modif_map:\n{modif}\n"
+            "favori_map:\n{favori}",
+            user_id=user_id,
+            deleted=pretty_deleted,
+            modif=pretty_modif,
+            favori=pretty_favori
         )
 
         # Regrouper les maps dans un dictionnaire

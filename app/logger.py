@@ -1,59 +1,93 @@
-"""
+'''
 Module de configuration pour le logger centralisé de l'application.
 
 Ce module utilise Loguru pour fournir un logger pré-configuré avec des sorties
 vers la console (avec couleurs) et des fichiers rotatifs.
-"""
+'''
 
 import sys
+import os
 from loguru import logger
 
 # ==============================================================================
 # Configuration de Loguru
 # ==============================================================================
 
+# Création du dossier de logs s'il n'existe pas
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
 # 1. Supprimer le handler par défaut pour éviter les doublons
 logger.remove()
 
-# 2. Définir un format commun pour les logs
-#    Inclut le temps, le niveau, le module, la fonction et le message.
-log_format = (
-    "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+# 2. Définir les formats pour les logs
+log_format_console = ( # 👈 Nouveau format "élégant"
+    "<white>{time:YYYY-MM-DD HH:mm:ss.SSS}</white> | "
     "<level>{level: <8}</level> | "
-    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
-    "<level>{message}</level>"
+    "<light-black>{name}:{function}:{line}</light-black> - "
+    "<level><b>{message}</b></level>"
+)
+log_format_file = (
+    "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
+    "{level: <8} | "
+    "{name}:{function}:{line} - "
+    "{message}"
 )
 
 # 3. Ajouter un handler pour la sortie console (stderr)
-#    - Les logs seront colorisés.
-#    - Affiche les logs à partir du niveau INFO.
 logger.add(
     sys.stderr,
     level="INFO",
-    format=log_format,
+    format=log_format_console,
     colorize=True,
     backtrace=True,
-    diagnose=True  # Pour un meilleur débogage des exceptions
+    diagnose=True
 )
 
-# 4. Ajouter un handler pour écrire les logs dans un fichier rotatif
-#    - Crée un nouveau fichier chaque jour à minuit.
-#    - Conserve les logs pendant 30 jours.
-#    - Compresse les anciens fichiers de log.
-#    - Affiche tous les logs à partir du niveau DEBUG.
+# 4. Ajouter des handlers pour les fichiers de log spécifiques
+#    - Rotation journalière, conservation de 30 jours, compression.
+
+# Handler pour les logs de niveau DEBUG
 logger.add(
-    "logs/app.log",
+    "logs/debug.log",
     level="DEBUG",
-    format=log_format,
-    rotation="00:00",  # Rotation journalière
+    format=log_format_file,
+    rotation="00:00",
     retention="30 days",
     compression="zip",
-    encoding="utf-8"
+    encoding="utf-8",
+    filter=lambda record: record["level"].name == "DEBUG"
+)
+
+# Handler pour les logs de niveau INFO et WARNING
+logger.add(
+    "logs/info.log",
+    level="INFO",
+    format=log_format_file,
+    rotation="00:00",
+    retention="30 days",
+    compression="zip",
+    encoding="utf-8",
+    filter=lambda record: record["level"].name in ("INFO", "WARNING")
+)
+
+# Handler pour les logs de niveau ERROR (et supérieur)
+logger.add(
+    "logs/error.log",
+    level="ERROR",
+    format=log_format_file,
+    rotation="00:00",
+    retention="30 days",
+    compression="zip",
+    encoding="utf-8",
+    backtrace=True,  # 👈 Ajout pour avoir la trace d'appel complète
+    diagnose=True    # 👈 Ajout pour inspecter les variables lors d'une erreur
 )
 
 # Le logger est maintenant configuré et prêt à être importé dans d'autres modules.
 # Exemple d'utilisation :
 # from app.logger import logger
-# logger.info("Ceci est un message d'information.")
 # logger.debug("Ceci est un message de débogage.")
+# logger.info("Ceci est un message d'information.")
 # logger.warning("Attention, quelque chose d'inattendu s'est produit.")
+# logger.error("Ceci est une erreur.")
