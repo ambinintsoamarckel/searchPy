@@ -4,10 +4,10 @@ import asyncio
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
+from collections import Counter
 
 import psutil
 from meilisearch_python_sdk import AsyncClient as MeiliClient
-from collections import Counter
 
 from app.cache import cache_manager
 from app.scoring.dispersion import GeoDispersionService

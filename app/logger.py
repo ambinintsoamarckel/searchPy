@@ -21,13 +21,13 @@ if not os.path.exists('logs'):
 logger.remove()
 
 # 2. Définir les formats pour les logs
-log_format_console = ( # 👈 Nouveau format "élégant"
+LOG_FORMAT_CONSOLE = ( # 👈 Nouveau format "élégant"
     "<white>{time:YYYY-MM-DD HH:mm:ss.SSS}</white> | "
     "<level>{level: <8}</level> | "
     "<light-black>{name}:{function}:{line}</light-black> - "
     "<level><b>{message}</b></level>"
 )
-log_format_file = (
+LOG_FORMAT_FILE = (
     "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
     "{level: <8} | "
     "{name}:{function}:{line} - "
@@ -38,7 +38,7 @@ log_format_file = (
 logger.add(
     sys.stderr,
     level="INFO",
-    format=log_format_console,
+    format=LOG_FORMAT_CONSOLE,
     colorize=True,
     backtrace=True,
     diagnose=True
@@ -51,7 +51,7 @@ logger.add(
 logger.add(
     "logs/debug.log",
     level="DEBUG",
-    format=log_format_file,
+    format=LOG_FORMAT_FILE,
     rotation="00:00",
     retention="30 days",
     compression="zip",
@@ -63,7 +63,7 @@ logger.add(
 logger.add(
     "logs/info.log",
     level="INFO",
-    format=log_format_file,
+    format=LOG_FORMAT_FILE,
     rotation="00:00",
     retention="30 days",
     compression="zip",
@@ -75,7 +75,7 @@ logger.add(
 logger.add(
     "logs/error.log",
     level="ERROR",
-    format=log_format_file,
+    format=LOG_FORMAT_FILE,
     rotation="00:00",
     retention="30 days",
     compression="zip",

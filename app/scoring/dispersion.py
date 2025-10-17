@@ -1,11 +1,12 @@
 """Service de dispersion géographique pour pagination équilibrée."""
 from typing import Any, Dict, List, Optional
+import json
 from dataclasses import dataclass
 
 from ..logger import logger
 
 # 🎯 CONSTANTES DE CONFIGURATION
-GEO_DISPERSION_GRID_SIZE = 0.1  # Taille de grille en degrés (≈11km)
+GEO_DISPERSION_GRID_SIZE = 0.01 # Taille de grille en degrés (≈5.5km)
 GEO_DISPERSION_STRATEGY = "grid"
 
 
@@ -100,10 +101,12 @@ class GeoDispersionService:  # pylint: disable=too-few-public-methods
         # Ajouter les résultats sans coordonnées à la fin
         all_dispersed = dispersed + non_geo_hits
 
-        logger.info(
-            "Dispersion géographique (stratégie=%s): %d résultats géo sur %d cellules, "
-            "%d sans géo",
-            strategy, len(geo_hits), cells_used, len(non_geo_hits),
+        logger.info( # 👈 Correction du formatage
+            "Dispersion géographique (stratégie={strategy}): {geo_count} résultats géo sur {cells_count} cellules, {non_geo_count} sans géo",
+            strategy=strategy,
+            geo_count=len(geo_hits),
+            cells_count=cells_used,
+            non_geo_count=len(non_geo_hits),
         )
 
         return {
@@ -147,6 +150,8 @@ class GeoDispersionService:  # pylint: disable=too-few-public-methods
                 x.get('lng', 0)
             ))
 
+        pretty_cells = json.dumps(cell_lists, indent=2, default=str, ensure_ascii=False)
+        logger.debug("Contenu des cellules de la grille avant dispersion:\n{cells_content}", cells_content=pretty_cells)
         # Round-robin entre les cellules pour une distribution équilibrée
         dispersed = []
         max_items = max(len(cell) for cell in cell_lists)
@@ -156,5 +161,5 @@ class GeoDispersionService:  # pylint: disable=too-few-public-methods
                 if i < len(cell):
                     dispersed.append(cell[i])
 
-        logger.debug("Dispersion par grille: %d cellules utilisées (ordre déterministe)", len(cells))
+        logger.debug("Dispersion par grille: {count} cellules utilisées (ordre déterministe)", count=len(cells)) # 👈 Correction du formatage
         return dispersed, len(cells)

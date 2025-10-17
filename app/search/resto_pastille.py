@@ -186,6 +186,42 @@ class RestoPastilleService:  # pylint: disable=too-few-public-methods
             user_id and maps['favori'].get(id_resto)
         )
 
+    async def _fetch_and_build_enrichment_maps(
+        self, all_ids: List[int], user_id: Optional[int]
+    ) -> Dict[str, Any]:
+        """
+        Exécute les requêtes DB en parallèle et construit les maps pour l'enrichissement.
+        """
+        # 1. Construire et exécuter les requêtes en parallèle
+        tasks = self._build_database_tasks(all_ids, user_id)
+        task_keys = list(tasks.keys())
+        results_list = await asyncio.gather(*tasks.values())
+        results = dict(zip(task_keys, results_list))
+
+        # 2. Récupérer les résultats
+        is_deleted_rows = results.get("is_deleted", [])
+        modif_rows = results.get("modifs", [])
+        favori_rows = results.get("favoris", [])
+
+        # 3. Construire les maps à partir des résultats
+        is_deleted_map, modif_map, favori_map = self._build_maps_from_results(
+            is_deleted_rows, modif_rows, favori_rows, user_id
+        )
+
+        # 4. Log des maps pour le débogage
+        logger.debug(
+            "RestoPastilleService - user_id: {user_id}\n"
+            "is_deleted_map:\n{deleted}\n"
+            "modif_map:\n{modif}\n"
+            "favori_map:\n{favori}",
+            user_id=user_id,
+            deleted=json.dumps(is_deleted_map, indent=2),
+            modif=json.dumps(modif_map, indent=2),
+            favori=json.dumps(favori_map, indent=2),
+        )
+
+        return {'is_deleted': is_deleted_map, 'modif': modif_map, 'favori': favori_map}
+
     async def append_resto_pastille(
         self,
         datas: List[Dict[str, Any]],
@@ -209,54 +245,8 @@ class RestoPastilleService:  # pylint: disable=too-few-public-methods
         if not all_ids:
             return datas
 
-        # 2) Construire et exécuter les requêtes en parallèle
-        tasks = self._build_database_tasks(all_ids, user_id)
-
-        # Exécuter les tâches et récupérer les résultats dans un dictionnaire
-        # pour un accès fiable par clé, évitant les erreurs d'index.
-        task_keys = list(tasks.keys())
-        task_values = list(tasks.values())
-        results_list = await asyncio.gather(*task_values)
-        results = dict(zip(task_keys, results_list))
-
-        # Récupération des résultats
-        is_deleted_rows = results.get("is_deleted", [])
-        modif_rows = results.get("modifs", [])
-        favori_rows = results.get("favoris", [])
-
-        # 3) Construire les maps
-        is_deleted_map, modif_map, favori_map = (
-            self._build_maps_from_results(
-                is_deleted_rows,
-                modif_rows,
-                favori_rows,
-                user_id
-            )
-        )
-
-        # Log des résultats des requêtes
-        # Formatage des dictionnaires en JSON pour une meilleure lisibilité
-        pretty_deleted = json.dumps(is_deleted_map, indent=2)
-        pretty_modif = json.dumps(modif_map, indent=2)
-        pretty_favori = json.dumps(favori_map, indent=2)
-
-        logger.debug(
-            "RestoPastilleService - user_id: {user_id}\n"
-            "is_deleted_map:\n{deleted}\n"
-            "modif_map:\n{modif}\n"
-            "favori_map:\n{favori}",
-            user_id=user_id,
-            deleted=pretty_deleted,
-            modif=pretty_modif,
-            favori=pretty_favori
-        )
-
-        # Regrouper les maps dans un dictionnaire
-        maps = {
-            'is_deleted': is_deleted_map,
-            'modif': modif_map,
-            'favori': favori_map
-        }
+        # 2) Récupérer les données d'enrichissement et les regrouper
+        maps = await self._fetch_and_build_enrichment_maps(all_ids, user_id)
 
         # 4) Enrichir les données
         for data in datas:

@@ -1,13 +1,8 @@
 """Main module for the FastAPI application."""
-import os
-from contextlib import asynccontextmanager
-import os
-from fastapi import Depends, FastAPI, HTTPException, status
 import json
+from contextlib import asynccontextmanager
+from fastapi import Depends, FastAPI, HTTPException, status
 from redis.exceptions import ConnectionError as RedisConnectionError
-
-# Importez vos configurations et services
-# Assurez-vous d'avoir les imports corrects pour ces modules :
 from .config import settings
 from .models import SearchRequest, SearchResponse
 from .search.search_service import SearchService
@@ -46,7 +41,7 @@ async def lifespan(_app: FastAPI):
     try:
         await db_connector.connect()
         logger.info("PostgreSQL connection pool established successfully.")
-    except Exception as e:
+    except ConnectionError as e:
         logger.error("Failed to connect to PostgreSQL: {error}", error=e)
         # Vous pourriez choisir d'arrêter l'application ici
 
@@ -54,7 +49,7 @@ async def lifespan(_app: FastAPI):
     try:
         await cache_manager.redis.ping()
         logger.info("Redis cache connected successfully.")
-    except Exception as e:
+    except RedisConnectionError as e:
         logger.error("Failed to connect to Redis: {error}", error=e)
 
     yield # L'application commence à traiter les requêtes
