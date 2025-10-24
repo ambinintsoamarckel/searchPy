@@ -1,6 +1,5 @@
 """Service de dispersion géographique pour pagination équilibrée."""
 from typing import Any, Dict, List, Optional
-import json
 from dataclasses import dataclass
 
 from ..logger import logger
