@@ -120,24 +120,58 @@ jobs:
     if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
 
     steps:
-      # 1. Connexion OpenVPN
-      - name: Connect to OpenVPN
-        uses: ludeeus/action-openvpn@main # Correction: 'master' remplacé par 'main'
-        with:
-          config: ${{ secrets.OPENVPN_CONFIG_BASE64 }}
-          password: ${{ secrets.OPENVPN_PASSWORD }}
+      - name: Install and Connect to OpenVPN
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openvpn
 
-      # 2. Déploiement via SSH
+          # Décoder et sauvegarder la config OpenVPN
+          echo "${{ secrets.OPENVPN_CONFIG_BASE64 }}" | base64 -d > /tmp/config.ovpn
+
+          # Créer le fichier contenant le passphrase du certificat
+          echo "${{ secrets.OPENVPN_PASSWORD }}" > /tmp/passphrase.txt
+
+          # Lancer OpenVPN en background avec le passphrase
+          sudo openvpn --config /tmp/config.ovpn --askpass /tmp/passphrase.txt --daemon --log /tmp/openvpn.log
+
+          # Attendre que la connexion VPN soit établie
+          echo "Waiting for VPN connection..."
+          for i in {1..30}; do
+            if ip addr show tun0 2>/dev/null; then
+              echo "VPN connected successfully!"
+              ip addr show tun0
+              break
+            fi
+            echo "Attempt $i/30: VPN not ready yet..."
+            sleep 2
+          done
+
+          # Vérifier si la connexion a réussi
+          if ! ip addr show tun0 2>/dev/null; then
+            echo "VPN connection failed!"
+            echo "OpenVPN logs:"
+            cat /tmp/openvpn.log
+            exit 1
+          fi
+
+          # Test de connectivité vers le VPS
+          ping -c 3 ${{ secrets.VPS_HOST }} || echo "Warning: Cannot ping VPS"
+
       - name: Deploy to server via SSH
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          # 🔥 UTILISATION DU SECRET POUR LE PORT 🔥
           port: ${{ secrets.VPS_SSH_PORT }}
           script: |
             cd /var/www/html/search_api
             docker compose pull
             docker compose up -d
             docker image prune -f
+
+      - name: Disconnect OpenVPN
+        if: always()
+        run: |
+          sudo killall openvpn || true
+          rm -f /tmp/config.ovpn /tmp/passphrase.txt /tmp/openvpn.log
