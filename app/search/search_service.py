@@ -209,14 +209,9 @@ class SearchService:
         hits = result.get('hits', [])
         estimated_total = result.get('estimated_total_hits', 0)
 
-        if ctx.is_resto_index :
-            """ logger.debug(
-                "Enrichissement des %s restos pour l'utilisateur %s",
-                len(hits), ctx.user_id
-            ) """
+        if ctx.is_resto_index:
             hits = await self.resto_pastille_service.append_resto_pastille(
-                datas=hits,
-                user_id=ctx.user_id
+                datas=hits, user_id=ctx.user_id
             )
         # Appliquer la dispersion géographique
         # La pagination est gérée plus tard dans la méthode `search`
@@ -268,17 +263,10 @@ class SearchService:
         processed['hits'] = processed['hits'][:ctx.options.limit]
         processed['total'] = len(processed['hits'])
 
-        if ctx.is_resto_index :
-            """ logger.debug(
-                "Enrichissement des %s restos pour l'utilisateur %s",
-                len(processed['hits']), ctx.user_id
-            ) """
+        if ctx.is_resto_index:
             # On enrichit la liste complète avant de la retourner
-            processed['hits'] = (
-                await self.resto_pastille_service.append_resto_pastille(
-                    datas=processed['hits'],
-                    user_id=ctx.user_id
-                )
+            processed["hits"] = await self.resto_pastille_service.append_resto_pastille(
+                datas=processed["hits"], user_id=ctx.user_id
             )
 
         # Le count_per_dep est calculé sur la liste complète des résultats pertinents

@@ -2,9 +2,6 @@
 
 import asyncio
 from typing import List, Dict, Any, Optional
-import json
-
-from app.logger import logger
 
 PostgresConnector = Any
 
@@ -209,17 +206,6 @@ class RestoPastilleService:  # pylint: disable=too-few-public-methods
         )
 
         # 4. Log des maps pour le débogage
-        """ logger.debug(
-            "RestoPastilleService - user_id: {user_id}\n"
-            "is_deleted_map:\n{deleted}\n"
-            "modif_map:\n{modif}\n"
-            "favori_map:\n{favori}",
-            user_id=user_id,
-            deleted=json.dumps(is_deleted_map, indent=2),
-            modif=json.dumps(modif_map, indent=2),
-            favori=json.dumps(favori_map, indent=2),
-        ) """
-
         return {'is_deleted': is_deleted_map, 'modif': modif_map, 'favori': favori_map}
 
     async def append_resto_pastille(

@@ -150,7 +150,6 @@ class GeoDispersionService:  # pylint: disable=too-few-public-methods
                 x.get('lng', 0)
             ))
 
-        pretty_cells = json.dumps(cell_lists, indent=2, default=str, ensure_ascii=False)
         # Round-robin entre les cellules pour une distribution équilibrée
         dispersed = []
         max_items = max(len(cell) for cell in cell_lists)
