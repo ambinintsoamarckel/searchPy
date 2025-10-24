@@ -28,10 +28,10 @@ LOG_FORMAT_CONSOLE = ( # 👈 Nouveau format "élégant"
     "<level><b>{message}</b></level>"
 )
 LOG_FORMAT_FILE = (
-    "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
-    "{level: <8} | "
-    "{name}:{function}:{line} - "
-    "{message}"
+    "<white>{time:YYYY-MM-DD HH:mm:ss.SSS}</white> | "
+    "<level>{level: <8}</level> | "
+    "<light-black>{name}:{function}:{line}</light-black> - "
+    "<level><b>{message}</b></level>"
 )
 
 # 3. Ajouter un handler pour la sortie console (stderr)
