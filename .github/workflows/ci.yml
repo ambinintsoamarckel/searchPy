@@ -186,4 +186,4 @@ jobs:
         if: always()
         run: |
           sudo killall openvpn || true
-          rm -f /tmp/config.ovpn /tmp/passphrase.txt /tmp/openvpn.log
+          sudo rm -f /tmp/config.ovpn /tmp/passphrase.txt /tmp/openvpn.log
