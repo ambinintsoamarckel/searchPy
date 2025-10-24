@@ -125,37 +125,49 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y openvpn
 
-          # Décoder et sauvegarder la config OpenVPN
-          echo "${{ secrets.OPENVPN_CONFIG_BASE64 }}" | base64 -d > /tmp/config.ovpn
+          # Créer le fichier config DIRECTEMENT depuis le secret (sans décodage base64)
+          cat << 'EOF' > /tmp/config.ovpn
+          ${{ secrets.OPENVPN_CONFIG_BASE64 }}
+          EOF
 
-          # Créer le fichier contenant le passphrase du certificat
+          # Vérifier que le fichier est valide
+          if [ ! -s /tmp/config.ovpn ]; then
+            echo "Error: OpenVPN config file is empty!"
+            exit 1
+          fi
+
+          echo "OpenVPN config created successfully"
+          echo "Config file size: $(wc -l /tmp/config.ovpn | awk '{print $1}') lines"
+
+          # Créer le fichier passphrase
           echo "${{ secrets.OPENVPN_PASSWORD }}" > /tmp/passphrase.txt
 
-          # Lancer OpenVPN en background avec le passphrase
+          # Lancer OpenVPN avec le passphrase
           sudo openvpn --config /tmp/config.ovpn --askpass /tmp/passphrase.txt --daemon --log /tmp/openvpn.log
 
-          # Attendre que la connexion VPN soit établie
+          # Attendre la connexion VPN
           echo "Waiting for VPN connection..."
           for i in {1..30}; do
             if ip addr show tun0 2>/dev/null; then
-              echo "VPN connected successfully!"
+              echo "✅ VPN connected successfully!"
               ip addr show tun0
               break
             fi
-            echo "Attempt $i/30: VPN not ready yet..."
+            echo "⏳ Attempt $i/30: VPN not ready yet..."
             sleep 2
           done
 
-          # Vérifier si la connexion a réussi
+          # Vérifier la connexion
           if ! ip addr show tun0 2>/dev/null; then
-            echo "VPN connection failed!"
+            echo "❌ VPN connection failed!"
             echo "OpenVPN logs:"
             cat /tmp/openvpn.log
             exit 1
           fi
 
-          # Test de connectivité vers le VPS
-          ping -c 3 ${{ secrets.VPS_HOST }} || echo "Warning: Cannot ping VPS"
+          # Test de connectivité
+          echo "Testing connectivity to VPS..."
+          ping -c 3 ${{ secrets.VPS_HOST }} || echo "⚠️ Cannot ping VPS (may be normal if ICMP is blocked)"
 
       - name: Deploy to server via SSH
         uses: appleboy/ssh-action@master
