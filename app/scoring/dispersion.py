@@ -151,7 +151,6 @@ class GeoDispersionService:  # pylint: disable=too-few-public-methods
             ))
 
         pretty_cells = json.dumps(cell_lists, indent=2, default=str, ensure_ascii=False)
-        logger.debug("Contenu des cellules de la grille avant dispersion:\n{cells_content}", cells_content=pretty_cells)
         # Round-robin entre les cellules pour une distribution équilibrée
         dispersed = []
         max_items = max(len(cell) for cell in cell_lists)

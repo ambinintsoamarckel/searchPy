@@ -210,10 +210,10 @@ class SearchService:
         estimated_total = result.get('estimated_total_hits', 0)
 
         if ctx.is_resto_index :
-            logger.debug(
+            """ logger.debug(
                 "Enrichissement des %s restos pour l'utilisateur %s",
                 len(hits), ctx.user_id
-            )
+            ) """
             hits = await self.resto_pastille_service.append_resto_pastille(
                 datas=hits,
                 user_id=ctx.user_id
@@ -269,10 +269,10 @@ class SearchService:
         processed['total'] = len(processed['hits'])
 
         if ctx.is_resto_index :
-            logger.debug(
+            """ logger.debug(
                 "Enrichissement des %s restos pour l'utilisateur %s",
                 len(processed['hits']), ctx.user_id
-            )
+            ) """
             # On enrichit la liste complète avant de la retourner
             processed['hits'] = (
                 await self.resto_pastille_service.append_resto_pastille(
