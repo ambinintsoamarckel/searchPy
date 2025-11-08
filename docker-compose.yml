@@ -1,28 +1,71 @@
-version: "3.8"
 services:
+  init-permissions:
+    image: alpine:latest
+    container_name: searchpy-init-permissions-dev
+    volumes:
+      - ./logs:/logs
+    command: >
+      sh -c "
+        echo '🔧 Vérification des permissions du dossier logs...'
+        mkdir -p /logs
+        chmod 777 /logs
+        chown -R 1000:1000 /logs
+        echo '✅ Permissions corrigées !'
+      "
+    restart: "no" # S'exécute une seule fois au démarrage
   searchpy:
     build: .
     command: uvicorn app.main:app --host 0.0.0.0 --reload
+    container_name: searchpy-app-dev
     ports:
       - "8000:8000"
     volumes:
-      - ./:/app:delegated
       - ./logs:/app/logs
     env_file:
       - .env
+    # Spécifie l'utilisateur pour éviter les problèmes de permissions
+    # user: "1000:1000"  # Décommente si ton app peut tourner en non-root
+    restart: unless-stopped
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          'python -c ''import sys, http.client; conn = http.client.HTTPConnection("localhost", 8000); conn.request("GET", "/health"); sys.exit(0) if conn.getresponse().status == 200 else sys.exit(1)''',
+          'python -c "import sys, http.client; conn = http.client.HTTPConnection(\"localhost\", 8000); conn.request(\"GET\", \"/health\"); sys.exit(0) if conn.getresponse().status == 200 else sys.exit(1)"',
         ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 2
+      start_period: 10s
     depends_on:
-      - redis
+      init-permissions:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks:
+      - search_api_network
+    labels:
+      - "autoheal=true"
 
   redis:
     image: redis:7-alpine
+    container_name: searchpy-redis-dev
+    # SÉCURITÉ : Redis n'est accessible que depuis l'intérieur du réseau Docker
+    # Si tu as besoin d'y accéder depuis l'extérieur, décommente :
+    # ports:
+    #   - "127.0.0.1:6379:6379"  # Accessible uniquement en localhost
     command: redis-server --save "" --appendonly no --maxmemory 512mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - search_api_network
+    labels:
+      - "autoheal=true"
+
+networks:
+  search_api_network:
+    driver: bridge

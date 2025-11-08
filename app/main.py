@@ -3,6 +3,7 @@ import json
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, status
 from redis.exceptions import ConnectionError as RedisConnectionError
+from meilisearch_python_sdk.errors import MeilisearchApiError
 from .config import settings
 from .models import SearchRequest, SearchResponse
 from .search.search_service import SearchService
@@ -115,7 +116,7 @@ async def health_check():
     Checks connectivity to essential services like Database and Redis.
     Returns 200 OK if all services are reachable, otherwise 503 Service Unavailable.
     """
-    services_status = {"database": "ok", "redis": "ok"}
+    services_status = {"database": "ok", "redis": "ok", "meilisearch": "ok"}
     try:
         # 1. Check Redis connection
         await cache_manager.redis.ping()
@@ -129,6 +130,13 @@ async def health_check():
     except ConnectionError:
         services_status["database"] = "error"
         logger.error("Health check failed: Database connection error.")
+
+    try:
+        # 3. Check Meilisearch connection
+        await search_service.client.health()
+    except MeilisearchApiError:
+        services_status["meilisearch"] = "error"
+        logger.error("Health check failed: Meilisearch connection error.")
 
     if "error" in services_status.values():
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=services_status)
